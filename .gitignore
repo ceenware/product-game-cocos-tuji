@@ -13,8 +13,21 @@ pnpm-debug.log*
 
 # build output
 dist/
-build/
+build/*
+!build/web/
+build/web/*
+!build/web/index.html
+!build/web/privacy/
+!build/web/privacy/**
+!build/web/game/
+!build/web/game/**
 coverage/
+
+# Quick App local build and signing output
+quickapp/node_modules/
+quickapp/build/
+quickapp/dist/
+quickapp/sign/
 
 # Cocos generated state
 library/
