@@ -8,5 +8,8 @@
   },
   "dependencies": {
     "hap-toolkit": "2.0.9-beta.3"
-  }
+  },
+  "browserslist": [
+    "chrome 65"
+  ]
 }

@@ -267,7 +267,7 @@ Create `scripts/verify-quickapp-rpk.sh`:
 #!/usr/bin/env bash
 set -euo pipefail
 
-rpk="${1:-quickapp/dist/com.yongzhe.huoxiantuwei.quickapp.release.rpk}"
+rpk="${1:-quickapp/dist/com.yongzhe.huoxiantuwei.quickapp.release.1.0.1.rpk}"
 test -f "$rpk"
 test "$(stat -f %z "$rpk")" -lt 2097152
 manifest="$(unzip -p "$rpk" manifest.json)"
@@ -299,7 +299,7 @@ Expected: a signed `.release.rpk` in `quickapp/dist/`.
 
 - [ ] **Step 5: Run RPK validation**
 
-Run: `bash scripts/verify-quickapp-rpk.sh quickapp/dist/com.yongzhe.huoxiantuwei.quickapp.release.rpk`
+Run: `bash scripts/verify-quickapp-rpk.sh quickapp/dist/com.yongzhe.huoxiantuwei.quickapp.release.1.0.1.rpk`
 
 Expected: exit code 0 and package size below 2 MB.
 
