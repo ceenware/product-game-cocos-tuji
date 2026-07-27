@@ -1,0 +1,46 @@
+{
+  "package": "com.yongzhe.huoxiantuwei.quickapp",
+  "name": "勇者火线突围",
+  "versionName": "1.0.1",
+  "versionCode": 2,
+  "minPlatformVersion": 1100,
+  "icon": "/common/logo.png",
+  "features": [
+    {
+      "name": "system.webview"
+    }
+  ],
+  "permissions": [
+    {
+      "origin": "https://ceenware.github.io"
+    }
+  ],
+  "config": {
+    "logLevel": "error",
+    "network": {
+      "connectTimeout": 15000,
+      "readTimeout": 30000,
+      "writeTimeout": 15000
+    }
+  },
+  "router": {
+    "entry": "pages/game",
+    "pages": {
+      "pages/game": {
+        "component": "index"
+      }
+    }
+  },
+  "display": {
+    "orientation": "portrait",
+    "titleBar": false,
+    "pages": {
+      "pages/game": {
+        "titleBar": false
+      }
+    }
+  },
+  "trustedSslDomains": [
+    "ceenware.github.io"
+  ]
+}

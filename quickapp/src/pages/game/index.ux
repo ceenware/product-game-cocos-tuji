@@ -1,0 +1,71 @@
+<template>
+  <div class="page">
+    <web if="{{!loadFailed}}" id="gameWeb" class="game-web" src="{{gameUrl}}" onpagefinish="onPageFinish" onerror="onWebError"></web>
+    <div if="{{loadFailed}}" class="error-state">
+      <text class="error-title">游戏加载失败</text>
+      <text class="error-text">请检查网络连接后重试</text>
+      <input class="retry-button" type="button" value="重新加载" onclick="retry"></input>
+    </div>
+  </div>
+</template>
+
+<script>
+export default {
+  data: {
+    gameUrl: 'https://ceenware.github.io/product-game-cocos-tuji/game/',
+    loadFailed: false
+  },
+  onPageFinish() {
+    this.loadFailed = false
+  },
+  onWebError() {
+    this.loadFailed = true
+  },
+  retry() {
+    this.loadFailed = false
+    this.gameUrl = `https://ceenware.github.io/product-game-cocos-tuji/game/?retry=${Date.now()}`
+  }
+}
+</script>
+
+<style>
+.page {
+  width: 100%;
+  height: 100%;
+  background-color: #000000;
+}
+
+.game-web {
+  width: 100%;
+  height: 100%;
+}
+
+.error-state {
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background-color: #101318;
+}
+
+.error-title {
+  color: #ffffff;
+  font-size: 36px;
+  margin-bottom: 20px;
+}
+
+.error-text {
+  color: #c7ccd4;
+  font-size: 26px;
+  margin-bottom: 32px;
+}
+
+.retry-button {
+  width: 280px;
+  height: 72px;
+  color: #ffffff;
+  background-color: #2878ff;
+  border-radius: 8px;
+}
+</style>

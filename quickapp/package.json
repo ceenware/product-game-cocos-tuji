@@ -1,0 +1,12 @@
+{
+  "name": "yongzhe-huoxian-tuwei-quickapp",
+  "version": "1.0.1",
+  "private": true,
+  "scripts": {
+    "build": "hap build",
+    "release": "hap release"
+  },
+  "dependencies": {
+    "hap-toolkit": "2.0.9-beta.3"
+  }
+}
