@@ -45,6 +45,9 @@ export class Init extends Component {
         StorageSystem.init();
         AudioSystem.init();
         UISystem.init(this.uiLayer);
+        if (!uniSdk.Global.isXiaoMiGame) {
+            this.initDeferredSystems();
+        }
     }
 
     protected update(dt) {

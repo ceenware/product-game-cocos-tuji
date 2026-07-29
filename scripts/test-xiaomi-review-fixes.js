@@ -174,6 +174,8 @@ function assertPrivacyConsentPrecedesDeferredSystems() {
         Camera: class {},
         Canvas: class {},
     };
+    const originalUniSdk = global.uniSdk;
+    global.uniSdk = { Global: { isXiaoMiGame: true } };
     const Init = loadTranspiledInit({
         cc: ccMock,
         '../Config/GlobalData': { default: { set() {} } },
@@ -225,6 +227,16 @@ function assertPrivacyConsentPrecedesDeferredSystems() {
     assert.equal(mainUIShowCalls, 1, 'Main UI must start exactly once after consent and initialization.');
     assert.equal(initFinishedEvents, 1, 'Init completion event must be emitted exactly once.');
 
+    global.uniSdk.Global.isXiaoMiGame = false;
+    SDKSystem.isInitFinished = false;
+    AdvertSystem.isInitFinished = false;
+    const nonXiaomiInit = new Init();
+    nonXiaomiInit.uiLayer = {};
+    nonXiaomiInit.initSystems();
+    assert.equal(sdkInitCalls, 2, 'Non-Xiaomi platforms must keep their existing SDK startup timing.');
+    assert.equal(advertInitCalls, 2, 'Non-Xiaomi platforms must keep advert event handlers available.');
+
+    global.uniSdk.Global.isXiaoMiGame = true;
     const cleanupInit = new Init();
     cleanupInit.uiLayer = {};
     cleanupInit.initSystems();
@@ -240,6 +252,7 @@ function assertPrivacyConsentPrecedesDeferredSystems() {
         cleanupInit.onDestroy();
     } finally {
         global.clearTimeout = originalClearTimeout;
+        global.uniSdk = originalUniSdk;
     }
     assert.equal(privacyOffCalls, 1, 'Destroy must remove a pending privacy confirmation listener.');
     assert.deepEqual(clearedTimeouts, [11, 22], 'Destroy must clear pending startup timers.');
@@ -289,6 +302,20 @@ function assertEarlyStartWaitsForLevelLoad() {
 
     homeUI.onGameStartClick();
     assert.equal(enterGameCalls, 1, 'Repeated start input must not start the level twice.');
+
+    const loadedHomeUI = new HomeUI();
+    let loadedEnterGameCalls = 0;
+    loadedHomeUI.isLoadLvFinish = true;
+    loadedHomeUI.enterGame = () => {
+        loadedEnterGameCalls += 1;
+    };
+    loadedHomeUI.onGameStartClick();
+    loadedHomeUI.onGameStartClick();
+    assert.equal(
+        loadedEnterGameCalls,
+        1,
+        'The first click after loading must start immediately and repeated input must be ignored.',
+    );
 }
 
 function assertHomeUICleanupSurvivesDestroyedChildren() {
