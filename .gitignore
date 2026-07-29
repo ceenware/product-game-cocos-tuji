@@ -25,3 +25,6 @@ profiles/
 # editor
 .idea/
 .vscode/
+
+# isolated implementation worktrees
+.worktrees/
