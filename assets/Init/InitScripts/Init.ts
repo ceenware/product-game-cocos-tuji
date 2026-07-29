@@ -19,6 +19,7 @@ export class Init extends Component {
 
     /**判断系统是否初始化完成 */
     private isSysInitFish = false;
+    private isMainUIShown = false;
 
     protected onLoad() {
         //
@@ -68,6 +69,20 @@ export class Init extends Component {
         EventManager.emit(EventTypes.GameEvents.InitLoadFinished);
         clog.log('#进入游戏');
 
+        if (!StorageSystem.getData().userSetting.showPrivacy) {
+            this.showMainUI();
+            return;
+        }
+
+        EventManager.once(EventTypes.UIEvents.PrivacyConfirm, this.showMainUI, this);
+        UISystem.showUI(UIEnum.PrivacyUI, { isLobby: false });
+        return;
+    }
+
+    private showMainUI() {
+        if (this.isMainUIShown) return;
+        this.isMainUIShown = true;
+
         // 定时器要释放
         let timeout: number = setTimeout(() => {
             clearTimeout(timeout);
@@ -94,4 +109,3 @@ export class Init extends Component {
     }
     // #endregion
 }
-
