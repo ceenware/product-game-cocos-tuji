@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, UIOpacity, tween, Label, v3, Tween } from 'cc';
+import { _decorator, Component, Node, UIOpacity, tween, Label, v3, Tween, isValid } from 'cc';
 import { BasicUI } from '../../Init/Basic/BasicUI';
 import { EventTypes } from '../../Init/Managers/EventTypes';
 import { AudioEnum } from '../../Init/SystemAudio/AudioEnum';
@@ -27,21 +27,30 @@ export class HomeUI extends BasicUI {
     protected isLoadLvFinish = false;
     protected isEnterGame = false;
 
-    private get startBtn(): Node {
-        return this.panel ? this.panel.getChildByName('startBtn') : null;
-    }
+    private startBtn: Node = null;
 
     protected onEvents() {
         this.on(EventTypes.TouchEvents.TouchStart, this.onGameStartClick, this);
         this.on(EventTypes.GameEvents.EnterChooseLv, this.onEnterChooseLv, this);
         this.on(EventTypes.UIEvents.PrivacyConfirm, this.onPrivacyConfirm, this);
-        this.startBtn?.off(Node.EventType.TOUCH_END, this.onGameStartClick, this);
-        this.startBtn?.on(Node.EventType.TOUCH_END, this.onGameStartClick, this);
+        if (isValid(this.startBtn)) {
+            this.startBtn.off(Node.EventType.TOUCH_END, this.onGameStartClick, this);
+        }
+        this.startBtn = this.panel ? this.panel.getChildByName('startBtn') : null;
+        if (isValid(this.startBtn)) {
+            this.startBtn.on(Node.EventType.TOUCH_END, this.onGameStartClick, this);
+        }
     }
 
     public offEvents() {
-        this.startBtn?.off(Node.EventType.TOUCH_END, this.onGameStartClick, this);
-        super.offEvents();
+        try {
+            if (isValid(this.startBtn)) {
+                this.startBtn.off(Node.EventType.TOUCH_END, this.onGameStartClick, this);
+            }
+        } finally {
+            this.startBtn = null;
+            super.offEvents();
+        }
     }
 
     public show(d) {

@@ -27,6 +27,115 @@ function parseTypeScript(fileName, source) {
     return sourceFile;
 }
 
+function loadTranspiledHomeUI(ccMock, BasicUIMock) {
+    const fileName = 'assets/UI/HomeUI/HomeUI.ts';
+    const source = fs.readFileSync(path.join(projectRoot, fileName), 'utf8');
+    const result = ts.transpileModule(source, {
+        compilerOptions: {
+            target: ts.ScriptTarget.ES2018,
+            module: ts.ModuleKind.CommonJS,
+            experimentalDecorators: true,
+        },
+        fileName,
+        reportDiagnostics: true,
+    });
+    assert.equal(
+        result.diagnostics && result.diagnostics.length,
+        0,
+        'HomeUI runtime fixture must transpile without diagnostics.',
+    );
+
+    const dependencies = {
+        cc: ccMock,
+        '../../Init/Basic/BasicUI': { BasicUI: BasicUIMock },
+        '../../Init/Managers/EventTypes': {
+            EventTypes: {
+                TouchEvents: { TouchStart: 1 },
+                GameEvents: { EnterChooseLv: 2 },
+                UIEvents: { PrivacyConfirm: 3 },
+            },
+        },
+        '../../Init/SystemAudio/AudioEnum': { AudioEnum: {} },
+        '../../Init/SystemAudio/AudioSystem': { AudioSystem: {} },
+        '../../Init/SystemSDK/SDKSystem': { SDKSystem: {}, PlatformType: {} },
+        '../../Init/SystemStorage/StorageSystem': { StorageSystem: {} },
+        '../../Init/SystemUI/UIEnum': { UIEnum: {} },
+        '../../Init/SystemUI/UISystem': { UISystem: {} },
+    };
+    const mockRequire = (request) => {
+        assert.ok(
+            Object.prototype.hasOwnProperty.call(dependencies, request),
+            `Unexpected HomeUI runtime dependency: ${request}`,
+        );
+        return dependencies[request];
+    };
+    const module = { exports: {} };
+    const execute = new Function('require', 'module', 'exports', result.outputText);
+    execute(mockRequire, module, module.exports);
+    return module.exports.HomeUI;
+}
+
+function assertHomeUICleanupSurvivesDestroyedChildren() {
+    let baseOffEventsCalls = 0;
+    class BasicUIMock {
+        on() {}
+
+        offEvents() {
+            baseOffEventsCalls += 1;
+        }
+    }
+
+    class NodeMock {}
+    NodeMock.EventType = { TOUCH_END: 'touch-end' };
+
+    const ccMock = {
+        _decorator: {
+            ccclass: () => (target) => target,
+            property: () => () => {},
+        },
+        Component: class {},
+        Node: NodeMock,
+        UIOpacity: class {},
+        tween: () => {},
+        Label: class {},
+        v3: () => {},
+        Tween: class {},
+        isValid: (node) => Boolean(node && node.isValid),
+    };
+    const HomeUI = loadTranspiledHomeUI(ccMock, BasicUIMock);
+    const homeUI = new HomeUI();
+    let startButtonOnCalls = 0;
+    const startButton = {
+        isValid: true,
+        off() {},
+        on(eventName, callback, target) {
+            assert.equal(eventName, NodeMock.EventType.TOUCH_END);
+            assert.equal(callback, homeUI.onGameStartClick);
+            assert.equal(target, homeUI);
+            startButtonOnCalls += 1;
+        },
+    };
+    homeUI.panel = {
+        getChildByName(name) {
+            assert.equal(name, 'startBtn');
+            return startButton;
+        },
+    };
+
+    homeUI.onEvents();
+    assert.equal(startButtonOnCalls, 1, 'HomeUI must bind the resolved start button.');
+
+    startButton.isValid = false;
+    homeUI.panel = {
+        getChildByName() {
+            throw new Error('destroyed panel must not be traversed during cleanup');
+        },
+    };
+
+    assert.doesNotThrow(() => homeUI.offEvents());
+    assert.equal(baseOffEventsCalls, 1, 'HomeUI must run inherited cleanup exactly once.');
+}
+
 function hasNode(sourceFile, predicate) {
     let found = false;
 
@@ -274,5 +383,7 @@ assert.equal(
     panelNodeIndex,
     'HomeUI.prefab startBtn must be a direct child of panel.',
 );
+
+assertHomeUICleanupSurvivesDestroyedChildren();
 
 console.log('Xiaomi review regression checks passed.');
