@@ -347,6 +347,28 @@ const homeUIPrefab = JSON.parse(fs.readFileSync(
     path.join(projectRoot, 'assets/UI/HomeUI/HomeUI.prefab'),
     'utf8',
 ));
+const requiredWechatSubpackageBundles = [
+    'Game',
+    'AudioAssets',
+    'Effect',
+    'LevelData',
+    'Roles',
+    'UI',
+];
+
+for (const bundleName of requiredWechatSubpackageBundles) {
+    const bundleMeta = JSON.parse(fs.readFileSync(
+        path.join(projectRoot, `assets/${bundleName}.meta`),
+        'utf8',
+    ));
+    assert.equal(
+        bundleMeta.userData &&
+            bundleMeta.userData.compressionType &&
+            bundleMeta.userData.compressionType.wechatgame,
+        'subpackage',
+        `${bundleName} must be a WeChat subpackage for Xiaomi packaging.`,
+    );
+}
 const panelNodeIndex = homeUIPrefab.findIndex(
     (entry) => entry && entry.__type__ === 'cc.Node' && entry._name === 'panel',
 );
