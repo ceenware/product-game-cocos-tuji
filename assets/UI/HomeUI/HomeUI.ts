@@ -27,10 +27,21 @@ export class HomeUI extends BasicUI {
     protected isLoadLvFinish = false;
     protected isEnterGame = false;
 
+    private get startBtn(): Node {
+        return this.panel ? this.panel.getChildByName('startBtn') : null;
+    }
+
     protected onEvents() {
         this.on(EventTypes.TouchEvents.TouchStart, this.onGameStartClick, this);
         this.on(EventTypes.GameEvents.EnterChooseLv, this.onEnterChooseLv, this);
         this.on(EventTypes.UIEvents.PrivacyConfirm, this.onPrivacyConfirm, this);
+        this.startBtn?.off(Node.EventType.TOUCH_END, this.onGameStartClick, this);
+        this.startBtn?.on(Node.EventType.TOUCH_END, this.onGameStartClick, this);
+    }
+
+    public offEvents() {
+        this.startBtn?.off(Node.EventType.TOUCH_END, this.onGameStartClick, this);
+        super.offEvents();
     }
 
     public show(d) {
@@ -231,4 +242,3 @@ export class HomeUI extends BasicUI {
     // #endregion
 
 }
-
