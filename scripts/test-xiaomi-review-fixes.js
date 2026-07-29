@@ -127,6 +127,7 @@ function assertHomeUICleanupSurvivesDestroyedChildren() {
 
     startButton.isValid = false;
     homeUI.panel = {
+        isValid: true,
         getChildByName() {
             throw new Error('destroyed panel must not be traversed during cleanup');
         },
@@ -250,17 +251,24 @@ function hasPrivateShowMainUI(sourceFile) {
 
 function hasStartButtonResolution(sourceFile) {
     return hasNode(sourceFile, (node) =>
-        ts.isCallExpression(node) &&
-        ts.isPropertyAccessExpression(node.expression) &&
-        node.expression.name.text === 'getChildByName' &&
-        node.arguments.length === 1 &&
-        ts.isStringLiteral(node.arguments[0]) &&
-        node.arguments[0].text === 'startBtn',
+        ts.isGetAccessorDeclaration(node) &&
+        isIdentifier(node.name, 'startBtn') &&
+        Boolean(node.modifiers && node.modifiers.some(
+            (modifier) => modifier.kind === ts.SyntaxKind.PrivateKeyword,
+        )) &&
+        hasNode(node, (child) =>
+            ts.isCallExpression(child) &&
+            ts.isPropertyAccessExpression(child.expression) &&
+            child.expression.name.text === 'getChildByName' &&
+            child.arguments.length === 1 &&
+            ts.isStringLiteral(child.arguments[0]) &&
+            child.arguments[0].text === 'startBtn',
+        ),
     );
 }
 
 function isStartButtonReference(node) {
-    return isIdentifier(node, 'startBtn') || isThisProperty(node, 'startBtn');
+    return isIdentifier(node, 'boundStartBtn') || isThisProperty(node, 'boundStartBtn');
 }
 
 function hasStartButtonListener(sourceFile, methodName) {
@@ -283,15 +291,20 @@ function hasStartButtonListener(sourceFile, methodName) {
 const supportedSyntaxFixture = parseTypeScript('supported-syntax.ts', `
 class ReviewFixture {
     private showMainUI() {}
+    private boundStartBtn;
+
+    private get startBtn() {
+        return this.node.getChildByName('startBtn');
+    }
 
     run() {
-        const startBtn = this.node.getChildByName('startBtn');
+        this.boundStartBtn = this.startBtn;
         if (!StorageSystem.getData().userSetting.showPrivacy) {
             EventManager.once(EventTypes.UIEvents.PrivacyConfirm, this.showMainUI, this);
             UISystem.showUI(UIEnum.PrivacyUI, { isLobby: false });
         }
-        startBtn?.on(Node.EventType.TOUCH_END, this.onGameStartClick, this);
-        startBtn?.off(Node.EventType.TOUCH_END, this.onGameStartClick, this);
+        this.boundStartBtn?.on(Node.EventType.TOUCH_END, this.onGameStartClick, this);
+        this.boundStartBtn?.off(Node.EventType.TOUCH_END, this.onGameStartClick, this);
     }
 }
 `);
@@ -303,8 +316,8 @@ const ignoredSyntaxFixture = parseTypeScript('ignored-syntax.ts', [
     'const ignoredCalls = `',
     'EventManager.once(EventTypes.UIEvents.PrivacyConfirm, this.showMainUI, this);',
     'UISystem.showUI(UIEnum.PrivacyUI, { isLobby: false });',
-    'startBtn?.on(Node.EventType.TOUCH_END, this.onGameStartClick, this);',
-    'startBtn?.off(Node.EventType.TOUCH_END, this.onGameStartClick, this);',
+    'boundStartBtn?.on(Node.EventType.TOUCH_END, this.onGameStartClick, this);',
+    'boundStartBtn?.off(Node.EventType.TOUCH_END, this.onGameStartClick, this);',
     '`;',
 ].join('\n'));
 const astChecks = [
@@ -359,7 +372,7 @@ assert.ok(
 );
 assert.ok(
     hasStartButtonResolution(homeUISourceFile),
-    'HomeUI must resolve startBtn by name.',
+    'HomeUI must resolve startBtn by name through a private getter.',
 );
 assert.ok(
     hasStartButtonListener(homeUISourceFile, 'on'),

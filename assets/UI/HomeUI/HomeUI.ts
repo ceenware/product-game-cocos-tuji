@@ -27,28 +27,32 @@ export class HomeUI extends BasicUI {
     protected isLoadLvFinish = false;
     protected isEnterGame = false;
 
-    private startBtn: Node = null;
+    private get startBtn(): Node {
+        return this.panel ? this.panel.getChildByName('startBtn') : null;
+    }
+
+    private boundStartBtn: Node = null;
 
     protected onEvents() {
         this.on(EventTypes.TouchEvents.TouchStart, this.onGameStartClick, this);
         this.on(EventTypes.GameEvents.EnterChooseLv, this.onEnterChooseLv, this);
         this.on(EventTypes.UIEvents.PrivacyConfirm, this.onPrivacyConfirm, this);
-        if (isValid(this.startBtn)) {
-            this.startBtn.off(Node.EventType.TOUCH_END, this.onGameStartClick, this);
+        if (isValid(this.boundStartBtn)) {
+            this.boundStartBtn.off(Node.EventType.TOUCH_END, this.onGameStartClick, this);
         }
-        this.startBtn = this.panel ? this.panel.getChildByName('startBtn') : null;
-        if (isValid(this.startBtn)) {
-            this.startBtn.on(Node.EventType.TOUCH_END, this.onGameStartClick, this);
+        this.boundStartBtn = this.startBtn;
+        if (isValid(this.boundStartBtn)) {
+            this.boundStartBtn.on(Node.EventType.TOUCH_END, this.onGameStartClick, this);
         }
     }
 
     public offEvents() {
         try {
-            if (isValid(this.startBtn)) {
-                this.startBtn.off(Node.EventType.TOUCH_END, this.onGameStartClick, this);
+            if (isValid(this.boundStartBtn)) {
+                this.boundStartBtn.off(Node.EventType.TOUCH_END, this.onGameStartClick, this);
             }
         } finally {
-            this.startBtn = null;
+            this.boundStartBtn = null;
             super.offEvents();
         }
     }
