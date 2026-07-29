@@ -1,7 +1,7 @@
 import { _decorator, Component, Node, Camera, Canvas } from 'cc';
 import GlobalData from '../Config/GlobalData';
 import { GlobalEnum } from '../Config/GlobalEnum';
-import EventManager from '../Managers/EventManager';
+import EventManager, { Handler } from '../Managers/EventManager';
 import { EventTypes } from '../Managers/EventTypes';
 import { AdvertSystem } from '../SystemAdvert/AdvertSystem';
 import { AudioSystem } from '../SystemAudio/AudioSystem';
@@ -20,6 +20,12 @@ export class Init extends Component {
     /**判断系统是否初始化完成 */
     private isSysInitFish = false;
     private isMainUIShown = false;
+    private isPrivacyResolved = false;
+    private isPrivacyPromptShown = false;
+    private areDeferredSystemsStarted = false;
+    private privacyConfirmHandler: Handler = null;
+    private mainUITimeout: number = null;
+    private preloadTimeout: number = null;
 
     protected onLoad() {
         //
@@ -38,9 +44,7 @@ export class Init extends Component {
     protected initSystems() {
         StorageSystem.init();
         AudioSystem.init();
-        SDKSystem.init();
         UISystem.init(this.uiLayer);
-        AdvertSystem.init(this.uiLayer);
     }
 
     protected update(dt) {
@@ -49,18 +53,51 @@ export class Init extends Component {
 
     /**检测各个系统是否加载完成-防止异步*/
     protected checkSysInitState() {
-        if (!this.isSysInitFish) {
-            let isFinish = true;
-            isFinish = isFinish && StorageSystem.isInitFinished;
-            isFinish = isFinish && AudioSystem.isInitFinished;
-            isFinish = isFinish && AdvertSystem.isInitFinished;
-            isFinish = isFinish && SDKSystem.isInitFinished;
-            isFinish = isFinish && UISystem.isInitFinished;
-            this.isSysInitFish = isFinish;
-            if (this.isSysInitFish) {
-                this.enterGame();
+        if (this.isSysInitFish) return;
+
+        const areCoreSystemsReady = StorageSystem.isInitFinished &&
+            AudioSystem.isInitFinished &&
+            UISystem.isInitFinished;
+        if (!areCoreSystemsReady) return;
+
+        if (!this.isPrivacyResolved) {
+            if (StorageSystem.getData().userSetting.showPrivacy) {
+                this.showPrivacyPrompt();
+                return;
             }
+            this.isPrivacyResolved = true;
         }
+
+        this.initDeferredSystems();
+        this.isSysInitFish = AdvertSystem.isInitFinished && SDKSystem.isInitFinished;
+        if (this.isSysInitFish) {
+            this.enterGame();
+        }
+    }
+
+    private showPrivacyPrompt() {
+        if (this.isPrivacyPromptShown) return;
+        this.isPrivacyPromptShown = true;
+        this.privacyConfirmHandler = EventManager.once(
+            EventTypes.UIEvents.PrivacyConfirm,
+            this.onPrivacyConfirm,
+            this,
+        );
+        UISystem.showUI(UIEnum.PrivacyUI, { isLobby: false });
+    }
+
+    private onPrivacyConfirm() {
+        if (this.isPrivacyResolved) return;
+        this.privacyConfirmHandler = null;
+        this.isPrivacyResolved = true;
+        this.initDeferredSystems();
+    }
+
+    private initDeferredSystems() {
+        if (this.areDeferredSystemsStarted) return;
+        this.areDeferredSystemsStarted = true;
+        SDKSystem.init();
+        AdvertSystem.init(this.uiLayer);
     }
     //#endregion
 
@@ -68,15 +105,7 @@ export class Init extends Component {
     protected enterGame() {
         EventManager.emit(EventTypes.GameEvents.InitLoadFinished);
         clog.log('#进入游戏');
-
-        if (!StorageSystem.getData().userSetting.showPrivacy) {
-            this.showMainUI();
-            return;
-        }
-
-        EventManager.once(EventTypes.UIEvents.PrivacyConfirm, this.showMainUI, this);
-        UISystem.showUI(UIEnum.PrivacyUI, { isLobby: false });
-        return;
+        this.showMainUI();
     }
 
     private showMainUI() {
@@ -84,14 +113,15 @@ export class Init extends Component {
         this.isMainUIShown = true;
 
         // 定时器要释放
-        let timeout: number = setTimeout(() => {
-            clearTimeout(timeout);
+        this.mainUITimeout = setTimeout(() => {
+            this.mainUITimeout = null;
             //广告
             UISystem.showUI(UIEnum.CustomAdUI);
 
             UISystem.showUI(UIEnum.HomeUI);
 
-            setTimeout(() => {
+            this.preloadTimeout = setTimeout(() => {
+                this.preloadTimeout = null;
                 this.preLoadBound();
             }, 100);
         }, 100);
@@ -108,4 +138,22 @@ export class Init extends Component {
         }
     }
     // #endregion
+
+    protected onDestroy() {
+        if (this.privacyConfirmHandler) {
+            EventManager.off(
+                EventTypes.UIEvents.PrivacyConfirm,
+                this.privacyConfirmHandler,
+            );
+            this.privacyConfirmHandler = null;
+        }
+        if (this.mainUITimeout !== null) {
+            clearTimeout(this.mainUITimeout);
+            this.mainUITimeout = null;
+        }
+        if (this.preloadTimeout !== null) {
+            clearTimeout(this.preloadTimeout);
+            this.preloadTimeout = null;
+        }
+    }
 }

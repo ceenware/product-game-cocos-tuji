@@ -27,7 +27,7 @@ function parseTypeScript(fileName, source) {
     return sourceFile;
 }
 
-function loadTranspiledHomeUI(ccMock, BasicUIMock) {
+function loadTranspiledHomeUI(ccMock, BasicUIMock, dependencyOverrides = {}) {
     const fileName = 'assets/UI/HomeUI/HomeUI.ts';
     const source = fs.readFileSync(path.join(projectRoot, fileName), 'utf8');
     const result = ts.transpileModule(source, {
@@ -61,6 +61,7 @@ function loadTranspiledHomeUI(ccMock, BasicUIMock) {
         '../../Init/SystemStorage/StorageSystem': { StorageSystem: {} },
         '../../Init/SystemUI/UIEnum': { UIEnum: {} },
         '../../Init/SystemUI/UISystem': { UISystem: {} },
+        ...dependencyOverrides,
     };
     const mockRequire = (request) => {
         assert.ok(
@@ -73,6 +74,221 @@ function loadTranspiledHomeUI(ccMock, BasicUIMock) {
     const execute = new Function('require', 'module', 'exports', result.outputText);
     execute(mockRequire, module, module.exports);
     return module.exports.HomeUI;
+}
+
+function loadTranspiledInit(dependencies) {
+    const fileName = 'assets/Init/InitScripts/Init.ts';
+    const source = fs.readFileSync(path.join(projectRoot, fileName), 'utf8');
+    const result = ts.transpileModule(source, {
+        compilerOptions: {
+            target: ts.ScriptTarget.ES2018,
+            module: ts.ModuleKind.CommonJS,
+            experimentalDecorators: true,
+        },
+        fileName,
+        reportDiagnostics: true,
+    });
+    assert.equal(
+        result.diagnostics && result.diagnostics.length,
+        0,
+        'Init runtime fixture must transpile without diagnostics.',
+    );
+
+    const mockRequire = (request) => {
+        assert.ok(
+            Object.prototype.hasOwnProperty.call(dependencies, request),
+            `Unexpected Init runtime dependency: ${request}`,
+        );
+        return dependencies[request];
+    };
+    const module = { exports: {} };
+    const execute = new Function('require', 'module', 'exports', result.outputText);
+    execute(mockRequire, module, module.exports);
+    return module.exports.Init;
+}
+
+function assertPrivacyConsentPrecedesDeferredSystems() {
+    let sdkInitCalls = 0;
+    let advertInitCalls = 0;
+    let privacyShowCalls = 0;
+    let mainUIShowCalls = 0;
+    let initFinishedEvents = 0;
+    let privacyOffCalls = 0;
+    let privacyCallback = null;
+    let privacyTarget = null;
+    const privacyHandler = { id: 7 };
+
+    const StorageSystem = {
+        isInitFinished: true,
+        init() {},
+        getData() {
+            return { userSetting: { showPrivacy: true } };
+        },
+    };
+    const AudioSystem = { isInitFinished: true, init() {} };
+    const SDKSystem = {
+        isInitFinished: false,
+        init() {
+            sdkInitCalls += 1;
+        },
+    };
+    const AdvertSystem = {
+        isInitFinished: false,
+        init() {
+            advertInitCalls += 1;
+            this.isInitFinished = true;
+        },
+    };
+    const UISystem = {
+        isInitFinished: true,
+        init() {},
+        showUI(name, options) {
+            assert.equal(name, 'PrivacyUI');
+            assert.deepEqual(options, { isLobby: false });
+            privacyShowCalls += 1;
+        },
+    };
+    const EventManager = {
+        once(type, callback, target) {
+            assert.equal(type, 2);
+            privacyCallback = callback;
+            privacyTarget = target;
+            return privacyHandler;
+        },
+        emit(type) {
+            if (type === 1) initFinishedEvents += 1;
+        },
+        off(type, handler) {
+            assert.equal(type, 2);
+            assert.equal(handler, privacyHandler);
+            privacyOffCalls += 1;
+        },
+    };
+    const ccMock = {
+        _decorator: {
+            ccclass: () => (target) => target,
+            property: () => () => {},
+        },
+        Component: class {},
+        Node: class {},
+        Camera: class {},
+        Canvas: class {},
+    };
+    const Init = loadTranspiledInit({
+        cc: ccMock,
+        '../Config/GlobalData': { default: { set() {} } },
+        '../Config/GlobalEnum': { GlobalEnum: { GlobalDataType: {} } },
+        '../Managers/EventManager': { default: EventManager },
+        '../Managers/EventTypes': {
+            EventTypes: {
+                GameEvents: { InitLoadFinished: 1 },
+                UIEvents: { PrivacyConfirm: 2 },
+            },
+        },
+        '../SystemAdvert/AdvertSystem': { AdvertSystem },
+        '../SystemAudio/AudioSystem': { AudioSystem },
+        '../SystemSDK/SDKSystem': { SDKSystem },
+        '../SystemStorage/StorageSystem': { StorageSystem },
+        '../SystemUI/UIEnum': {
+            UIEnum: { PrivacyUI: 'PrivacyUI', CustomAdUI: 'CustomAdUI', HomeUI: 'HomeUI' },
+        },
+        '../SystemUI/UISystem': { UISystem },
+        '../Tools/ColorLog': { clog: { log() {} } },
+        '../Tools/Loader': { default: { loadBundle() {} } },
+    });
+
+    const init = new Init();
+    init.uiLayer = {};
+    init.showMainUI = () => {
+        mainUIShowCalls += 1;
+    };
+
+    init.initSystems();
+    assert.equal(sdkInitCalls, 0, 'SDK initialization must wait for privacy consent.');
+    assert.equal(advertInitCalls, 0, 'Advert initialization must wait for privacy consent.');
+
+    init.checkSysInitState();
+    init.checkSysInitState();
+    assert.equal(privacyShowCalls, 1, 'Privacy UI must only be shown once while awaiting consent.');
+    assert.equal(sdkInitCalls, 0, 'Polling must not initialize the SDK before consent.');
+    assert.equal(mainUIShowCalls, 0, 'Main UI must remain hidden before consent.');
+
+    assert.equal(typeof privacyCallback, 'function', 'Privacy confirmation callback must be registered.');
+    privacyCallback.call(privacyTarget);
+    assert.equal(sdkInitCalls, 1, 'Consent must start SDK initialization exactly once.');
+    assert.equal(advertInitCalls, 1, 'Consent must start advert initialization exactly once.');
+    assert.equal(mainUIShowCalls, 0, 'Main UI must wait for deferred systems to finish.');
+
+    SDKSystem.isInitFinished = true;
+    init.checkSysInitState();
+    init.checkSysInitState();
+    assert.equal(mainUIShowCalls, 1, 'Main UI must start exactly once after consent and initialization.');
+    assert.equal(initFinishedEvents, 1, 'Init completion event must be emitted exactly once.');
+
+    const cleanupInit = new Init();
+    cleanupInit.uiLayer = {};
+    cleanupInit.initSystems();
+    cleanupInit.checkSysInitState();
+    cleanupInit.mainUITimeout = 11;
+    cleanupInit.preloadTimeout = 22;
+    const clearedTimeouts = [];
+    const originalClearTimeout = global.clearTimeout;
+    global.clearTimeout = (timeoutId) => {
+        clearedTimeouts.push(timeoutId);
+    };
+    try {
+        cleanupInit.onDestroy();
+    } finally {
+        global.clearTimeout = originalClearTimeout;
+    }
+    assert.equal(privacyOffCalls, 1, 'Destroy must remove a pending privacy confirmation listener.');
+    assert.deepEqual(clearedTimeouts, [11, 22], 'Destroy must clear pending startup timers.');
+}
+
+function assertEarlyStartWaitsForLevelLoad() {
+    class BasicUIMock {
+        emit() {}
+    }
+    class NodeMock {}
+    NodeMock.EventType = { TOUCH_END: 'touch-end' };
+    const ccMock = {
+        _decorator: {
+            ccclass: () => (target) => target,
+            property: () => () => {},
+        },
+        Component: class {},
+        Node: NodeMock,
+        UIOpacity: class {},
+        tween: () => {},
+        Label: class {},
+        v3: () => {},
+        Tween: class {},
+        isValid: () => true,
+    };
+    const HomeUI = loadTranspiledHomeUI(ccMock, BasicUIMock, {
+        '../../Init/SystemUI/UIEnum': {
+            UIEnum: { LevelController: 'LevelController', LevelInfoUI: 'LevelInfoUI' },
+        },
+        '../../Init/SystemUI/UISystem': { UISystem: { showUI() {} } },
+    });
+    const homeUI = new HomeUI();
+    let enterGameCalls = 0;
+    homeUI.enterGame = () => {
+        enterGameCalls += 1;
+    };
+    homeUI.touchMask = { active: false };
+    homeUI.finger = { active: false };
+    homeUI.bgOpacity = null;
+
+    homeUI.onGameStartClick();
+    homeUI.onGameStartClick();
+    assert.equal(enterGameCalls, 0, 'Start requests must wait until the level is loaded.');
+
+    homeUI.onGameLoadFinish();
+    assert.equal(enterGameCalls, 1, 'A queued start request must run once after level loading.');
+
+    homeUI.onGameStartClick();
+    assert.equal(enterGameCalls, 1, 'Repeated start input must not start the level twice.');
 }
 
 function assertHomeUICleanupSurvivesDestroyedChildren() {
@@ -105,9 +321,15 @@ function assertHomeUICleanupSurvivesDestroyedChildren() {
     const HomeUI = loadTranspiledHomeUI(ccMock, BasicUIMock);
     const homeUI = new HomeUI();
     let startButtonOnCalls = 0;
+    let startButtonOffCalls = 0;
     const startButton = {
         isValid: true,
-        off() {},
+        off(eventName, callback, target) {
+            assert.equal(eventName, NodeMock.EventType.TOUCH_END);
+            assert.equal(callback, homeUI.onGameStartClick);
+            assert.equal(target, homeUI);
+            startButtonOffCalls += 1;
+        },
         on(eventName, callback, target) {
             assert.equal(eventName, NodeMock.EventType.TOUCH_END);
             assert.equal(callback, homeUI.onGameStartClick);
@@ -125,6 +347,13 @@ function assertHomeUICleanupSurvivesDestroyedChildren() {
     homeUI.onEvents();
     assert.equal(startButtonOnCalls, 1, 'HomeUI must bind the resolved start button.');
 
+    homeUI.offEvents();
+    assert.equal(startButtonOffCalls, 1, 'HomeUI must unbind a valid start button.');
+    assert.equal(baseOffEventsCalls, 1, 'HomeUI must run inherited cleanup exactly once.');
+
+    homeUI.onEvents();
+    assert.equal(startButtonOnCalls, 2, 'HomeUI must support rebinding after reuse.');
+
     startButton.isValid = false;
     homeUI.panel = {
         isValid: true,
@@ -134,7 +363,7 @@ function assertHomeUICleanupSurvivesDestroyedChildren() {
     };
 
     assert.doesNotThrow(() => homeUI.offEvents());
-    assert.equal(baseOffEventsCalls, 1, 'HomeUI must run inherited cleanup exactly once.');
+    assert.equal(baseOffEventsCalls, 2, 'HomeUI must run inherited cleanup on every teardown.');
 }
 
 function hasNode(sourceFile, predicate) {
@@ -204,6 +433,7 @@ function hasStoragePrivacyGate(sourceFile) {
     return hasNode(sourceFile, (node) => {
         if (!ts.isIfStatement(node)) return false;
         const condition = unwrapParentheses(node.expression);
+        if (isStoragePrivacyAccess(condition)) return true;
         return ts.isPrefixUnaryExpression(condition) &&
             condition.operator === ts.SyntaxKind.ExclamationToken &&
             isStoragePrivacyAccess(unwrapParentheses(condition.operand));
@@ -215,7 +445,7 @@ function hasEventManagerPrivacyOnce(sourceFile) {
         if (!isCallTo(node, ['EventManager', 'once']) || node.arguments.length !== 3) return false;
         const [eventName, callback, target] = node.arguments;
         return isPropertyPath(eventName, ['EventTypes', 'UIEvents', 'PrivacyConfirm']) &&
-            isThisProperty(callback, 'showMainUI') &&
+            isThisProperty(callback, 'onPrivacyConfirm') &&
             isThisExpression(target);
     });
 }
@@ -291,6 +521,7 @@ function hasStartButtonListener(sourceFile, methodName) {
 const supportedSyntaxFixture = parseTypeScript('supported-syntax.ts', `
 class ReviewFixture {
     private showMainUI() {}
+    private onPrivacyConfirm() {}
     private boundStartBtn;
 
     private get startBtn() {
@@ -299,8 +530,8 @@ class ReviewFixture {
 
     run() {
         this.boundStartBtn = this.startBtn;
-        if (!StorageSystem.getData().userSetting.showPrivacy) {
-            EventManager.once(EventTypes.UIEvents.PrivacyConfirm, this.showMainUI, this);
+        if (StorageSystem.getData().userSetting.showPrivacy) {
+            EventManager.once(EventTypes.UIEvents.PrivacyConfirm, this.onPrivacyConfirm, this);
             UISystem.showUI(UIEnum.PrivacyUI, { isLobby: false });
         }
         this.boundStartBtn?.on(Node.EventType.TOUCH_END, this.onGameStartClick, this);
@@ -420,5 +651,7 @@ assert.equal(
 );
 
 assertHomeUICleanupSurvivesDestroyedChildren();
+assertPrivacyConsentPrecedesDeferredSystems();
+assertEarlyStartWaitsForLevelLoad();
 
 console.log('Xiaomi review regression checks passed.');

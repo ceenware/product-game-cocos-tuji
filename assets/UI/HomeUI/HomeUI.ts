@@ -26,6 +26,7 @@ export class HomeUI extends BasicUI {
 
     protected isLoadLvFinish = false;
     protected isEnterGame = false;
+    private isStartRequested = false;
 
     private get startBtn(): Node {
         return this.panel ? this.panel.getChildByName('startBtn') : null;
@@ -68,6 +69,7 @@ export class HomeUI extends BasicUI {
 
         this.isEnterGame = false;
         this.isLoadLvFinish = false;
+        this.isStartRequested = false;
         this.touchMask.active = false;
         this.panel.active = true;
         this.finger.active = false;
@@ -175,6 +177,9 @@ export class HomeUI extends BasicUI {
     // #region -----------------按钮--------------
     /**点击开始按钮 */
     public onGameStartClick() {
+        if (this.isEnterGame || this.isStartRequested) return;
+        this.isStartRequested = true;
+        if (!this.isLoadLvFinish) return;
         this.enterGame();
     }
 
@@ -250,6 +255,10 @@ export class HomeUI extends BasicUI {
         //隐藏首页背景
         this.hideBg(() => {
         });
+
+        if (this.isStartRequested) {
+            this.enterGame();
+        }
     }
 
     // #endregion
