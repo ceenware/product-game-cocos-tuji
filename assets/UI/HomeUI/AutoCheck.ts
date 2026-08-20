@@ -18,6 +18,8 @@ export class AutoCheck extends Component {
     }
 
     autoShowUI() {
+        if (SDKSystem._curPlatform == PlatformType.PCMiniGame) return;
+
         this.checkPrivacyUI();
         this.checkSignUI();
         this.checkTurnTableUI();
@@ -26,8 +28,7 @@ export class AutoCheck extends Component {
     checkPrivacyUI() {
         //自动弹出一次
         if (SDKSystem._curPlatform == PlatformType.OPPOMiniGame ||
-            SDKSystem._curPlatform == PlatformType.VIVOMiniGame ||
-            SDKSystem._curPlatform == PlatformType.PCMiniGame) {
+            SDKSystem._curPlatform == PlatformType.VIVOMiniGame) {
             if (StorageSystem.getData().userSetting.showPrivacy) {
                 UISystem.showUI(UIEnum.PrivacyUI, { isLobby: false });
             }
@@ -71,4 +72,3 @@ export class AutoCheck extends Component {
         }
     }
 }
-

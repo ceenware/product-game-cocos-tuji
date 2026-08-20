@@ -48,6 +48,9 @@ function loadTranspiledHomeUI(ccMock, BasicUIMock, dependencyOverrides = {}) {
     const dependencies = {
         cc: ccMock,
         '../../Init/Basic/BasicUI': { BasicUI: BasicUIMock },
+        '../../Init/InitScripts/Init': {
+            Init: { PrivacyPolicyVersion: 'douyin-2026-08-20' },
+        },
         '../../Init/Managers/EventTypes': {
             EventTypes: {
                 TouchEvents: { TouchStart: 1 },
@@ -258,6 +261,204 @@ function assertPrivacyConsentPrecedesDeferredSystems() {
     assert.deepEqual(clearedTimeouts, [11, 22], 'Destroy must clear pending startup timers.');
 }
 
+function assertDouyinPrivacyConsentPrecedesDeferredSystems() {
+    let sdkInitCalls = 0;
+    let advertInitCalls = 0;
+    let privacyShowCalls = 0;
+    let mainUIShowCalls = 0;
+    let privacyCallback = null;
+    let privacyTarget = null;
+    const privacyHandler = { id: 9 };
+
+    const StorageSystem = {
+        isInitFinished: true,
+        init() {},
+        getData() {
+            return { userSetting: { showPrivacy: false, privacyVersion: '' } };
+        },
+    };
+    const AudioSystem = { isInitFinished: true, init() {} };
+    const SDKSystem = {
+        isInitFinished: false,
+        init() {
+            sdkInitCalls += 1;
+        },
+    };
+    const AdvertSystem = {
+        isInitFinished: false,
+        init() {
+            advertInitCalls += 1;
+            this.isInitFinished = true;
+        },
+    };
+    const UISystem = {
+        isInitFinished: true,
+        init() {},
+        showUI(name, options) {
+            assert.equal(name, 'PrivacyUI');
+            assert.deepEqual(options, { isLobby: false });
+            privacyShowCalls += 1;
+        },
+    };
+    const EventManager = {
+        once(type, callback, target) {
+            assert.equal(type, 2);
+            privacyCallback = callback;
+            privacyTarget = target;
+            return privacyHandler;
+        },
+        emit() {},
+        off() {},
+    };
+    const ccMock = {
+        _decorator: {
+            ccclass: () => (target) => target,
+            property: () => () => {},
+        },
+        Component: class {},
+        Node: class {},
+        Camera: class {},
+        Canvas: class {},
+    };
+    const originalUniSdk = global.uniSdk;
+    global.uniSdk = { Global: { isXiaoMiGame: false, isTTGame: true } };
+    const Init = loadTranspiledInit({
+        cc: ccMock,
+        '../Config/GlobalData': { default: { set() {} } },
+        '../Config/GlobalEnum': { GlobalEnum: { GlobalDataType: {} } },
+        '../Managers/EventManager': { default: EventManager },
+        '../Managers/EventTypes': {
+            EventTypes: {
+                GameEvents: { InitLoadFinished: 1 },
+                UIEvents: { PrivacyConfirm: 2 },
+            },
+        },
+        '../SystemAdvert/AdvertSystem': { AdvertSystem },
+        '../SystemAudio/AudioSystem': { AudioSystem },
+        '../SystemSDK/SDKSystem': { SDKSystem },
+        '../SystemStorage/StorageSystem': { StorageSystem },
+        '../SystemUI/UIEnum': {
+            UIEnum: { PrivacyUI: 'PrivacyUI', CustomAdUI: 'CustomAdUI', HomeUI: 'HomeUI' },
+        },
+        '../SystemUI/UISystem': { UISystem },
+        '../Tools/ColorLog': { clog: { log() {} } },
+        '../Tools/Loader': { default: { loadBundle() {} } },
+    });
+
+    try {
+        const init = new Init();
+        init.uiLayer = {};
+        init.showMainUI = () => {
+            mainUIShowCalls += 1;
+        };
+
+        init.initSystems();
+        assert.equal(sdkInitCalls, 0, 'Douyin SDK initialization must wait for privacy consent.');
+        assert.equal(advertInitCalls, 0, 'Douyin advert initialization must wait for privacy consent.');
+
+        init.checkSysInitState();
+        init.checkSysInitState();
+        assert.equal(privacyShowCalls, 1, 'Douyin must show the updated privacy UI before startup.');
+        assert.equal(mainUIShowCalls, 0, 'Douyin main UI must remain hidden before consent.');
+
+        assert.equal(typeof privacyCallback, 'function', 'Douyin privacy confirmation callback must be registered.');
+        privacyCallback.call(privacyTarget);
+        assert.equal(sdkInitCalls, 1, 'Douyin consent must start SDK initialization exactly once.');
+        assert.equal(advertInitCalls, 1, 'Douyin consent must start advert initialization exactly once.');
+
+        SDKSystem.isInitFinished = true;
+        init.checkSysInitState();
+        assert.equal(mainUIShowCalls, 1, 'Douyin main UI must start once after consent and SDK initialization.');
+    } finally {
+        global.uniSdk = originalUniSdk;
+    }
+}
+
+function loadTranspiledPrivacyUI(ccMock, BasicUIMock, dependencyOverrides = {}) {
+    const fileName = 'assets/UI/PrivacyUI/PrivacyUI.ts';
+    const source = fs.readFileSync(path.join(projectRoot, fileName), 'utf8');
+    const result = ts.transpileModule(source, {
+        compilerOptions: {
+            target: ts.ScriptTarget.ES2018,
+            module: ts.ModuleKind.CommonJS,
+            experimentalDecorators: true,
+        },
+        fileName,
+        reportDiagnostics: true,
+    });
+    assert.equal(
+        result.diagnostics && result.diagnostics.length,
+        0,
+        'PrivacyUI runtime fixture must transpile without diagnostics.',
+    );
+
+    const dependencies = {
+        cc: ccMock,
+        '../../Init/Basic/BasicUI': { BasicUI: BasicUIMock },
+        '../../Init/InitScripts/Init': {
+            Init: { PrivacyPolicyVersion: 'douyin-2026-08-20' },
+        },
+        '../../Init/Managers/EventTypes': {
+            EventTypes: {
+                SDKEvents: { ExitApp: 'exit-app' },
+                UIEvents: { PrivacyConfirm: 'privacy-confirm' },
+            },
+        },
+        '../../Init/SystemStorage/StorageSystem': { StorageSystem: {} },
+        '../../Init/SystemUI/UIEnum': { UIEnum: {} },
+        '../../Init/SystemUI/UISystem': { UISystem: {} },
+        ...dependencyOverrides,
+    };
+    const mockRequire = (request) => {
+        assert.ok(
+            Object.prototype.hasOwnProperty.call(dependencies, request),
+            `Unexpected PrivacyUI runtime dependency: ${request}`,
+        );
+        return dependencies[request];
+    };
+    const module = { exports: {} };
+    const execute = new Function('require', 'module', 'exports', result.outputText);
+    execute(mockRequire, module, module.exports);
+    return module.exports.PrivacyUI;
+}
+
+function assertPrivacyUITextContainsDouyinOperatorDetails() {
+    class BasicUIMock {
+        show() {}
+    }
+    class LabelMock {}
+    const label = new LabelMock();
+    const ccMock = {
+        _decorator: {
+            ccclass: () => (target) => target,
+            property: () => () => {},
+        },
+        Component: class {},
+        Node: class {},
+        Label: LabelMock,
+    };
+    const PrivacyUI = loadTranspiledPrivacyUI(ccMock, BasicUIMock);
+    const privacyUI = new PrivacyUI();
+    privacyUI.node = {
+        getChildByPath(pathName) {
+            assert.equal(pathName, 'bg/ScrollView/view/content/label1');
+            return {
+                getComponent(ComponentType) {
+                    assert.equal(ComponentType, LabelMock);
+                    return label;
+                },
+            };
+        },
+    };
+
+    privacyUI.onLoad();
+    assert.match(label.string, /巴中宜辰网络科技有限公司/, 'Privacy text must include the certified operator name.');
+    assert.match(label.string, /四川省巴中市巴州区巴州大道37号办公楼202号/, 'Privacy text must include the operator address.');
+    assert.match(label.string, /vicky@ceenmobi\.com/, 'Privacy text must include the operator contact email.');
+    assert.doesNotMatch(label.string, /\n\s*\n/, 'Privacy text must not contain blank lines that can be interpreted as empty or meaningless content.');
+    assert.doesNotMatch(label.string, /__USER_AGENT_NAME__|2711205782@qq\.com|3628946269@qq\.com/, 'Privacy text must not use legacy SDK placeholders or stale emails.');
+}
+
 function assertEarlyStartWaitsForLevelLoad() {
     class BasicUIMock {
         emit() {}
@@ -316,6 +517,103 @@ function assertEarlyStartWaitsForLevelLoad() {
         1,
         'The first click after loading must start immediately and repeated input must be ignored.',
     );
+}
+
+function assertHomeUIShowDoesNotStartLevelBeforePlayerInput() {
+    const emittedEvents = [];
+    class BasicUIMock {
+        show() {}
+
+        emit(eventName) {
+            emittedEvents.push(eventName);
+        }
+    }
+
+    class NodeMock {
+        constructor(name = '') {
+            this.name = name;
+            this._name = name;
+            this.active = true;
+            this.isValid = true;
+        }
+
+        getChildByName() {
+            return null;
+        }
+    }
+    NodeMock.EventType = { TOUCH_END: 'touch-end' };
+
+    const previousUniSdk = global.uniSdk;
+    global.uniSdk = {
+        Global: {
+            isVivogame: false,
+            isOppogame: false,
+        },
+    };
+
+    try {
+        const GameEvents = { GameStart: 'game-start' };
+        const HomeUI = loadTranspiledHomeUI({
+            _decorator: {
+                ccclass: () => (target) => target,
+                property: () => () => {},
+            },
+            Component: class {},
+            Node: NodeMock,
+            UIOpacity: class {},
+            tween: () => {},
+            Label: class {},
+            LabelOutline: class {},
+            Graphics: class {},
+            Color: class {},
+            UITransform: class {},
+            v3: () => {},
+            Tween: class {},
+            isValid: (node) => Boolean(node && node.isValid !== false),
+        }, BasicUIMock, {
+            '../../Init/Managers/EventTypes': {
+                EventTypes: {
+                    TouchEvents: { TouchStart: 'touch-start' },
+                    GameEvents,
+                    UIEvents: { PrivacyConfirm: 'privacy-confirm' },
+                },
+            },
+            '../../Init/SystemAudio/AudioEnum': { AudioEnum: { homeBgm: 'home-bgm' } },
+            '../../Init/SystemAudio/AudioSystem': { AudioSystem: { playBGM() {} } },
+            '../../Init/SystemSDK/SDKSystem': {
+                SDKSystem: { _curPlatform: 0 },
+                PlatformType: { PCMiniGame: 0, TTMiniGame: 4, OPPOMiniGame: 2, VIVOMiniGame: 3 },
+            },
+            '../../Init/SystemStorage/StorageSystem': {
+                StorageSystem: { getData: () => ({ levelAssets: { curLv: 1 } }) },
+            },
+            '../../Init/SystemUI/UIEnum': {
+                UIEnum: { PlayerAssetsUI: 'PlayerAssetsUI' },
+            },
+            '../../Init/SystemUI/UISystem': { UISystem: { showUI() {} } },
+        });
+
+        const homeUI = new HomeUI();
+        homeUI.panel = new NodeMock('panel');
+        homeUI.touchMask = new NodeMock('touchMask');
+        homeUI.finger = new NodeMock('finger');
+        homeUI.gameAdBtn = new NodeMock('gameAdBtn');
+        homeUI.privacyBtn = new NodeMock('privacyBtn');
+        homeUI.lvLabel = { string: '' };
+        homeUI.bgOpacity = { opacity: 255 };
+
+        homeUI.show({});
+
+        assert.equal(
+            emittedEvents.includes(GameEvents.GameStart),
+            false,
+            'HomeUI.show must not start or preload the level before the player taps the start button.',
+        );
+        assert.equal(homeUI.isLoadLvFinish, false, 'The level must remain unloaded while the player is still on the home screen.');
+        assert.equal(homeUI.finger.active, false, 'The start prompt must not appear until the level has loaded after player input.');
+    } finally {
+        global.uniSdk = previousUniSdk;
+    }
 }
 
 function assertHomeUICleanupSurvivesDestroyedChildren() {
@@ -393,6 +691,159 @@ function assertHomeUICleanupSurvivesDestroyedChildren() {
     assert.equal(baseOffEventsCalls, 2, 'HomeUI must run inherited cleanup on every teardown.');
 }
 
+function assertHomeUISidebarRevisitButtonEmitsSdkEvent() {
+    const emittedEvents = [];
+    class BasicUIMock {
+        emit(eventName) {
+            emittedEvents.push(eventName);
+        }
+    }
+
+    class NodeMock {
+        constructor(name = '') {
+            this.name = name;
+            this._name = name;
+            this.children = [];
+            this.active = true;
+            this.isValid = true;
+            this.layer = 0;
+            this.listeners = [];
+            this.components = [];
+        }
+
+        addChild(child) {
+            child.parent = this;
+            this.children.push(child);
+        }
+
+        getChildByName(name) {
+            return this.children.find((child) => child.name === name || child._name === name) || null;
+        }
+
+        addComponent(ComponentType) {
+            const component = new ComponentType();
+            component.node = this;
+            this.components.push(component);
+            return component;
+        }
+
+        setPosition(position) {
+            this.position = position;
+        }
+
+        on(eventName, callback, target) {
+            this.listeners.push({ eventName, callback, target });
+        }
+
+        off(eventName, callback, target) {
+            this.listeners = this.listeners.filter(
+                (listener) => listener.eventName !== eventName ||
+                    listener.callback !== callback ||
+                    listener.target !== target,
+            );
+        }
+    }
+    NodeMock.EventType = { TOUCH_END: 'touch-end' };
+
+    class UITransformMock {
+        setContentSize(width, height) {
+            this.contentSize = { width, height };
+        }
+    }
+    class GraphicsMock {
+        roundRect(x, y, width, height, radius) {
+            this.roundRectArgs = { x, y, width, height, radius };
+        }
+
+        fill() {
+            this.filled = true;
+        }
+    }
+    class LabelMock {}
+    LabelMock.HorizontalAlign = { CENTER: 1 };
+    LabelMock.VerticalAlign = { CENTER: 1 };
+    class LabelOutlineMock {}
+    class ColorMock {
+        constructor(r, g, b, a) {
+            Object.assign(this, { r, g, b, a });
+        }
+    }
+
+    const SDKSystem = { _curPlatform: 4 };
+    const PlatformType = { TTMiniGame: 4, PCMiniGame: 0 };
+    const HomeUI = loadTranspiledHomeUI({
+        _decorator: {
+            ccclass: () => (target) => target,
+            property: () => () => {},
+        },
+        Component: class {},
+        Node: NodeMock,
+        UIOpacity: class {},
+        tween: () => {},
+        Label: LabelMock,
+        LabelOutline: LabelOutlineMock,
+        Graphics: GraphicsMock,
+        Color: ColorMock,
+        UITransform: UITransformMock,
+        v3: (x, y, z) => ({ x, y, z }),
+        Tween: class {},
+        isValid: (node) => Boolean(node && node.isValid !== false),
+    }, BasicUIMock, {
+        '../../Init/Managers/EventTypes': {
+            EventTypes: {
+                TouchEvents: { TouchStart: 1 },
+                GameEvents: { EnterChooseLv: 2 },
+                UIEvents: { PrivacyConfirm: 3 },
+                SDKEvents: { NavigateToSidebar: 'navigate-to-sidebar' },
+            },
+        },
+        '../../Init/SystemSDK/SDKSystem': { SDKSystem, PlatformType },
+        '../../Init/SystemAudio/AudioEnum': { AudioEnum: { BtnClick: 'btn-click' } },
+        '../../Init/SystemAudio/AudioSystem': { AudioSystem: { playEffect() {} } },
+    });
+
+    const homeUI = new HomeUI();
+    const panel = new NodeMock('panel');
+    panel.layer = 33554432;
+    homeUI.panel = panel;
+
+    homeUI.syncSidebarRevisitEntry();
+    const button = panel.getChildByName('sidebarRevisitBtn');
+    assert.ok(button, 'HomeUI must create a visible top-level sidebar revisit button on the lobby panel.');
+    assert.equal(button.parent, panel, 'Sidebar revisit button must be a direct child of the HomeUI panel.');
+    assert.equal(button.active, true, 'Sidebar revisit button must be visible on Douyin.');
+    assert.equal(button.layer, panel.layer, 'Sidebar revisit button must render on the same layer as the panel.');
+    assert.ok(
+        button.listeners.some((listener) =>
+            listener.eventName === NodeMock.EventType.TOUCH_END &&
+            listener.callback === homeUI.onShowSidebarRevisit &&
+            listener.target === homeUI,
+        ),
+        'Sidebar revisit button must bind TOUCH_END to onShowSidebarRevisit.',
+    );
+
+    const labelNode = button.getChildByName('sidebarRevisitLabel');
+    const label = labelNode && labelNode.components.find((component) => component instanceof LabelMock);
+    assert.equal(label && label.string, '侧边栏复访任务', 'Sidebar revisit entry label must clearly identify the revisit task.');
+    assert.ok(
+        homeUI.getSidebarRevisitGuideText().includes('从抖音首页侧边栏进入') &&
+            homeUI.getSidebarRevisitGuideText().includes('返回本游戏即可完成复访任务'),
+        'Sidebar revisit task must provide clear completion instructions.',
+    );
+
+    const touchListener = button.listeners.find((listener) => listener.eventName === NodeMock.EventType.TOUCH_END);
+    touchListener.callback.call(touchListener.target);
+    assert.deepEqual(
+        emittedEvents,
+        ['navigate-to-sidebar'],
+        'Tapping the sidebar revisit button must emit the Douyin sidebar navigation SDK event.',
+    );
+
+    SDKSystem._curPlatform = PlatformType.PCMiniGame;
+    homeUI.syncSidebarRevisitEntry();
+    assert.equal(button.active, false, 'Sidebar revisit button must stay hidden outside Douyin mini game builds.');
+}
+
 function hasNode(sourceFile, predicate) {
     let found = false;
 
@@ -442,7 +893,15 @@ function unwrapParentheses(node) {
 }
 
 function isStoragePrivacyAccess(node) {
-    if (!ts.isPropertyAccessExpression(node) || node.name.text !== 'showPrivacy') return false;
+    return isUserSettingPropertyAccess(node, 'showPrivacy');
+}
+
+function isStoragePrivacyVersionAccess(node) {
+    return isUserSettingPropertyAccess(node, 'privacyVersion');
+}
+
+function isUserSettingPropertyAccess(node, propertyName) {
+    if (!ts.isPropertyAccessExpression(node) || node.name.text !== propertyName) return false;
 
     const userSettingAccess = node.expression;
     if (!ts.isPropertyAccessExpression(userSettingAccess) ||
@@ -461,10 +920,43 @@ function hasStoragePrivacyGate(sourceFile) {
         if (!ts.isIfStatement(node)) return false;
         const condition = unwrapParentheses(node.expression);
         if (isStoragePrivacyAccess(condition)) return true;
+        if (ts.isCallExpression(condition) &&
+            ts.isPropertyAccessExpression(condition.expression) &&
+            isThisExpression(condition.expression.expression) &&
+            condition.expression.name.text === 'shouldShowPrivacyPrompt') return true;
         return ts.isPrefixUnaryExpression(condition) &&
             condition.operator === ts.SyntaxKind.ExclamationToken &&
             isStoragePrivacyAccess(unwrapParentheses(condition.operand));
     });
+}
+
+function hasPrivacyVersionGate(sourceFile) {
+    return hasNode(sourceFile, (node) =>
+        ts.isMethodDeclaration(node) &&
+        isIdentifier(node.name, 'shouldShowPrivacyPrompt') &&
+        hasNode(node, (child) =>
+            isStoragePrivacyAccess(child) ||
+            (ts.isPropertyAccessExpression(child) &&
+                child.name.text === 'showPrivacy' &&
+                isIdentifier(child.expression, 'userSetting')),
+        ) &&
+        hasNode(node, (child) =>
+            isStoragePrivacyVersionAccess(child) ||
+            (ts.isPropertyAccessExpression(child) &&
+                child.name.text === 'privacyVersion' &&
+                isIdentifier(child.expression, 'userSetting')),
+        ) &&
+        hasNode(node, (child) => isPropertyPath(child, ['Init', 'PrivacyPolicyVersion'])),
+    );
+}
+
+function hasPreLaunchPrivacyPlatformGate(sourceFile) {
+    return hasNode(sourceFile, (node) =>
+        ts.isMethodDeclaration(node) &&
+        isIdentifier(node.name, 'requiresPreLaunchPrivacyConsent') &&
+        hasNode(node, (child) => isPropertyPath(child, ['uniSdk', 'Global', 'isXiaoMiGame'])) &&
+        hasNode(node, (child) => isPropertyPath(child, ['uniSdk', 'Global', 'isTTGame'])),
+    );
 }
 
 function hasEventManagerPrivacyOnce(sourceFile) {
@@ -545,8 +1037,64 @@ function hasStartButtonListener(sourceFile, methodName) {
     });
 }
 
+function hasSidebarRevisitButtonFactory(sourceFile) {
+    return hasNode(sourceFile, (node) => {
+        if (!ts.isMethodDeclaration(node) || !isIdentifier(node.name, 'syncSidebarRevisitEntry')) {
+            return false;
+        }
+
+        const createsNamedButton = hasNode(node, (child) =>
+            ts.isNewExpression(child) &&
+            isIdentifier(child.expression, 'Node') &&
+            child.arguments.length >= 1 &&
+            ts.isStringLiteral(child.arguments[0]) &&
+            child.arguments[0].text === 'sidebarRevisitBtn',
+        );
+        const attachesToPanel = hasNode(node, (child) =>
+            ts.isCallExpression(child) &&
+            ts.isPropertyAccessExpression(child.expression) &&
+            child.expression.name.text === 'addChild' &&
+            isThisProperty(child.expression.expression, 'panel'),
+        );
+        const limitsToDouyin = hasNode(node, (child) =>
+            isPropertyPath(child, ['PlatformType', 'TTMiniGame']),
+        );
+        const bindsTouchHandler = hasNode(node, (child) => {
+            if (!ts.isCallExpression(child) ||
+                !ts.isPropertyAccessExpression(child.expression) ||
+                child.expression.name.text !== 'on' ||
+                child.arguments.length !== 3) {
+                return false;
+            }
+
+            const [eventName, callback, target] = child.arguments;
+            return isPropertyPath(eventName, ['Node', 'EventType', 'TOUCH_END']) &&
+                isThisProperty(callback, 'onShowSidebarRevisit') &&
+                isThisExpression(target);
+        });
+
+        return createsNamedButton && attachesToPanel && limitsToDouyin && bindsTouchHandler;
+    });
+}
+
+function hasSidebarRevisitEventEmit(sourceFile) {
+    return hasNode(sourceFile, (node) =>
+        ts.isMethodDeclaration(node) &&
+        isIdentifier(node.name, 'onShowSidebarRevisit') &&
+        hasNode(node, (child) =>
+            ts.isCallExpression(child) &&
+            ts.isPropertyAccessExpression(child.expression) &&
+            child.expression.name.text === 'emit' &&
+            isThisExpression(child.expression.expression) &&
+            child.arguments.length >= 1 &&
+            isPropertyPath(child.arguments[0], ['EventTypes', 'SDKEvents', 'NavigateToSidebar']),
+        ),
+    );
+}
+
 const supportedSyntaxFixture = parseTypeScript('supported-syntax.ts', `
 class ReviewFixture {
+    static readonly PrivacyPolicyVersion = 'douyin-2026-08-20';
     private showMainUI() {}
     private onPrivacyConfirm() {}
     private boundStartBtn;
@@ -555,9 +1103,29 @@ class ReviewFixture {
         return this.node.getChildByName('startBtn');
     }
 
+    public syncSidebarRevisitEntry() {
+        if (SDKSystem._curPlatform != PlatformType.TTMiniGame) return;
+        const btn = new Node('sidebarRevisitBtn');
+        this.panel.addChild(btn);
+        btn.on(Node.EventType.TOUCH_END, this.onShowSidebarRevisit, this);
+    }
+
+    protected onShowSidebarRevisit() {
+        this.emit(EventTypes.SDKEvents.NavigateToSidebar);
+    }
+
+    private requiresPreLaunchPrivacyConsent() {
+        return Boolean(uniSdk.Global.isXiaoMiGame || uniSdk.Global.isTTGame);
+    }
+
+    private shouldShowPrivacyPrompt() {
+        const userSetting = StorageSystem.getData().userSetting;
+        return userSetting.showPrivacy || userSetting.privacyVersion !== Init.PrivacyPolicyVersion;
+    }
+
     run() {
         this.boundStartBtn = this.startBtn;
-        if (StorageSystem.getData().userSetting.showPrivacy) {
+        if (this.shouldShowPrivacyPrompt()) {
             EventManager.once(EventTypes.UIEvents.PrivacyConfirm, this.onPrivacyConfirm, this);
             UISystem.showUI(UIEnum.PrivacyUI, { isLobby: false });
         }
@@ -571,21 +1139,29 @@ const ignoredSyntaxFixture = parseTypeScript('ignored-syntax.ts', [
     '// StorageSystem.getData().userSetting.showPrivacy',
     "const ignoredMethod = 'private showMainUI() {}';",
     "const ignoredStartButton = \"this.node.getChildByName('startBtn')\";",
+    "const ignoredSidebarButton = \"new Node('sidebarRevisitBtn')\";",
+    "const ignoredSidebarEvent = \"this.emit(EventTypes.SDKEvents.NavigateToSidebar)\";",
+    "const ignoredPrivacyVersion = \"userSetting.privacyVersion !== Init.PrivacyPolicyVersion\";",
     'const ignoredCalls = `',
     'EventManager.once(EventTypes.UIEvents.PrivacyConfirm, this.showMainUI, this);',
     'UISystem.showUI(UIEnum.PrivacyUI, { isLobby: false });',
     'boundStartBtn?.on(Node.EventType.TOUCH_END, this.onGameStartClick, this);',
     'boundStartBtn?.off(Node.EventType.TOUCH_END, this.onGameStartClick, this);',
+    'btn.on(Node.EventType.TOUCH_END, this.onShowSidebarRevisit, this);',
     '`;',
 ].join('\n'));
 const astChecks = [
     ['stored privacy gate', hasStoragePrivacyGate],
+    ['privacy version gate', hasPrivacyVersionGate],
+    ['pre-launch privacy platform gate', hasPreLaunchPrivacyPlatformGate],
     ['privacy confirmation listener', hasEventManagerPrivacyOnce],
     ['privacy UI call', hasPrivacyUIShow],
     ['private showMainUI method', hasPrivateShowMainUI],
     ['start button resolution', hasStartButtonResolution],
     ['start button on listener', (sourceFile) => hasStartButtonListener(sourceFile, 'on')],
     ['start button off listener', (sourceFile) => hasStartButtonListener(sourceFile, 'off')],
+    ['sidebar revisit button factory', hasSidebarRevisitButtonFactory],
+    ['sidebar revisit event emit', hasSidebarRevisitEventEmit],
 ];
 
 for (const [checkName, check] of astChecks) {
@@ -639,6 +1215,14 @@ assert.ok(
     'Init must gate first launch with the stored privacy flag.',
 );
 assert.ok(
+    hasPrivacyVersionGate(initSourceFile),
+    'Init must force a new privacy prompt when the stored policy version is stale.',
+);
+assert.ok(
+    hasPreLaunchPrivacyPlatformGate(initSourceFile),
+    'Init must require pre-launch privacy consent on Xiaomi and Douyin builds.',
+);
+assert.ok(
     hasEventManagerPrivacyOnce(initSourceFile),
     'Init must show the main UI once privacy is confirmed.',
 );
@@ -662,6 +1246,14 @@ assert.ok(
     hasStartButtonListener(homeUISourceFile, 'off'),
     'HomeUI must remove the startBtn TOUCH_END listener.',
 );
+assert.ok(
+    hasSidebarRevisitButtonFactory(homeUISourceFile),
+    'HomeUI must create a top-level Douyin sidebar revisit button on the lobby panel.',
+);
+assert.ok(
+    hasSidebarRevisitEventEmit(homeUISourceFile),
+    'HomeUI must emit NavigateToSidebar when the sidebar revisit entry is tapped.',
+);
 assert.notEqual(
     panelNodeIndex,
     -1,
@@ -678,7 +1270,11 @@ assert.equal(
 );
 
 assertHomeUICleanupSurvivesDestroyedChildren();
+assertHomeUISidebarRevisitButtonEmitsSdkEvent();
 assertPrivacyConsentPrecedesDeferredSystems();
+assertDouyinPrivacyConsentPrecedesDeferredSystems();
+assertHomeUIShowDoesNotStartLevelBeforePlayerInput();
+assertPrivacyUITextContainsDouyinOperatorDetails();
 assertEarlyStartWaitsForLevelLoad();
 
 console.log('Xiaomi review regression checks passed.');

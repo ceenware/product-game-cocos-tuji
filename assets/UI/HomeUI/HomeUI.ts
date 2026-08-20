@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, UIOpacity, tween, Label, v3, Tween, isValid } from 'cc';
+import { _decorator, Component, Node, UIOpacity, tween, Label, v3, Tween, isValid, UITransform, Graphics, Color, LabelOutline } from 'cc';
 import { BasicUI } from '../../Init/Basic/BasicUI';
 import { EventTypes } from '../../Init/Managers/EventTypes';
 import { AudioEnum } from '../../Init/SystemAudio/AudioEnum';
@@ -27,6 +27,7 @@ export class HomeUI extends BasicUI {
     protected isLoadLvFinish = false;
     protected isEnterGame = false;
     private isStartRequested = false;
+    private sidebarRevisitBtn: Node = null;
 
     private get startBtn(): Node {
         return this.panel ? this.panel.getChildByName('startBtn') : null;
@@ -52,8 +53,12 @@ export class HomeUI extends BasicUI {
             if (isValid(this.boundStartBtn)) {
                 this.boundStartBtn.off(Node.EventType.TOUCH_END, this.onGameStartClick, this);
             }
+            if (isValid(this.sidebarRevisitBtn)) {
+                this.sidebarRevisitBtn.off(Node.EventType.TOUCH_END, this.onShowSidebarRevisit, this);
+            }
         } finally {
             this.boundStartBtn = null;
+            this.sidebarRevisitBtn = null;
             super.offEvents();
         }
     }
@@ -72,6 +77,7 @@ export class HomeUI extends BasicUI {
         this.isStartRequested = false;
         this.touchMask.active = false;
         this.panel.active = true;
+        this.syncSidebarRevisitEntry();
         this.finger.active = false;
         this.bgOpacity.opacity = 255;
 
@@ -89,11 +95,6 @@ export class HomeUI extends BasicUI {
             // }
         }
 
-        //自动进入
-        this.showLvScene();
-        // if (GlobalTmpData.UIData.isEnterLv) {
-        // } else {
-        // }
         AudioSystem.playBGM(AudioEnum.homeBgm);
     }
 
@@ -179,7 +180,10 @@ export class HomeUI extends BasicUI {
     public onGameStartClick() {
         if (this.isEnterGame || this.isStartRequested) return;
         this.isStartRequested = true;
-        if (!this.isLoadLvFinish) return;
+        if (!this.isLoadLvFinish) {
+            this.showLvScene();
+            return;
+        }
         this.enterGame();
     }
 
@@ -215,6 +219,94 @@ export class HomeUI extends BasicUI {
                 this.panel.active = true;
             }
         });
+    }
+
+    public syncSidebarRevisitEntry() {
+        let sidebarBtn = isValid(this.sidebarRevisitBtn) ? this.sidebarRevisitBtn : null;
+        if (!sidebarBtn && this.panel) {
+            sidebarBtn = this.panel.getChildByName('sidebarRevisitBtn');
+        }
+
+        if (SDKSystem._curPlatform != PlatformType.TTMiniGame) {
+            if (isValid(sidebarBtn)) {
+                sidebarBtn.active = false;
+                sidebarBtn.off(Node.EventType.TOUCH_END, this.onShowSidebarRevisit, this);
+            }
+            this.sidebarRevisitBtn = sidebarBtn;
+            return;
+        }
+
+        if (!this.panel) return;
+
+        if (!isValid(sidebarBtn)) {
+            sidebarBtn = new Node('sidebarRevisitBtn');
+            sidebarBtn.layer = this.panel.layer;
+            sidebarBtn.setPosition(v3(238, 338, 0));
+
+            const transform = sidebarBtn.addComponent(UITransform);
+            transform.setContentSize(164, 54);
+
+            const bg = sidebarBtn.addComponent(Graphics);
+            bg.fillColor = new Color(35, 48, 74, 235);
+            bg.roundRect(-82, -27, 164, 54, 12);
+            bg.fill();
+
+            const labelNode = new Node('sidebarRevisitLabel');
+            labelNode.layer = sidebarBtn.layer;
+            labelNode.setPosition(v3(0, 0, 0));
+            sidebarBtn.addChild(labelNode);
+
+            const labelTransform = labelNode.addComponent(UITransform);
+            labelTransform.setContentSize(164, 54);
+
+            const label = labelNode.addComponent(Label);
+            label.string = '侧边栏复访任务';
+            label.fontSize = 22;
+            label.lineHeight = 30;
+            label.horizontalAlign = Label.HorizontalAlign.CENTER;
+            label.verticalAlign = Label.VerticalAlign.CENTER;
+            label.color = new Color(255, 238, 118, 255);
+
+            const outline = labelNode.addComponent(LabelOutline);
+            outline.color = new Color(53, 36, 6, 255);
+            outline.width = 3;
+
+            this.panel.addChild(sidebarBtn);
+        }
+
+        sidebarBtn.active = true;
+        sidebarBtn.off(Node.EventType.TOUCH_END, this.onShowSidebarRevisit, this);
+        sidebarBtn.on(Node.EventType.TOUCH_END, this.onShowSidebarRevisit, this);
+        this.sidebarRevisitBtn = sidebarBtn;
+    }
+
+    public getSidebarRevisitGuideText() {
+        return [
+            '侧边栏复访任务指引',
+            '1. 点击确定后将打开抖音侧边栏。',
+            '2. 从抖音首页侧边栏进入《勇者火线突围》。',
+            '3. 返回本游戏即可完成复访任务并继续游玩。',
+        ].join('\n');
+    }
+
+    protected onShowSidebarRevisit() {
+        AudioSystem.playEffect(AudioEnum.BtnClick);
+        if (typeof uniSdk !== 'undefined' && uniSdk.showPopup) {
+            uniSdk.showPopup(
+                this.getSidebarRevisitGuideText(),
+                () => {
+                    this.emit(EventTypes.SDKEvents.NavigateToSidebar);
+                },
+                null,
+                this,
+                false,
+                '侧边栏复访任务',
+                '确定',
+                '取消',
+            );
+            return;
+        }
+        this.emit(EventTypes.SDKEvents.NavigateToSidebar);
     }
 
     // #endregion

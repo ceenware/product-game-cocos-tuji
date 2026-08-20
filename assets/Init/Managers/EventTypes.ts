@@ -31,6 +31,7 @@ export namespace EventTypes {
         ReportAldStageAward,
         ReportAldStageTools,
         ReportEvent,
+        NavigateToSidebar,
     }
 
     /**游戏框架事件 */
@@ -173,4 +174,3 @@ export namespace EventTypes {
 
     //#endregion
 }
-

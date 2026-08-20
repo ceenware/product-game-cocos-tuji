@@ -3,6 +3,8 @@ import { EventTypes } from "../Managers/EventTypes";
 import { AudioSystem } from "../SystemAudio/AudioSystem";
 import SDK from "./SDK";
 
+declare const tt: any;
+
 export class TTSDK extends SDK {
     protected onEvents() {
         super.onEvents();
@@ -14,6 +16,7 @@ export class TTSDK extends SDK {
         EventManager.on(EventTypes.SDKEvents.ResumeRecord, this.onResumeRecord, this);
         EventManager.on(EventTypes.SDKEvents.StopRecord, this.onStopRecord, this);
         EventManager.on(EventTypes.SDKEvents.ShareRecord, this.onShareRecord, this);
+        EventManager.on(EventTypes.SDKEvents.NavigateToSidebar, this.onNavigateToSidebar, this);
     }
 
     protected setAdCfg(): void {
@@ -24,6 +27,7 @@ export class TTSDK extends SDK {
         this.adConfig.shareInfoArr = [{ title: "一起来玩吧!", img: "" }]; // 自定义分享
 
         this.onShareAppMessage();
+        this.checkSidebarSceneSupport();
     }
 
     //#region -------------功能------
@@ -47,6 +51,42 @@ export class TTSDK extends SDK {
             }
 
         });
+    }
+
+    private checkSidebarSceneSupport() {
+        if (typeof tt === "undefined" || !tt || typeof tt.checkScene !== "function") return;
+
+        try {
+            tt.checkScene({
+                scene: "sidebar",
+                success: (res) => {
+                    console.log("tt.checkScene sidebar success", res);
+                },
+                fail: (res) => {
+                    console.warn("tt.checkScene sidebar fail", res);
+                },
+            });
+        } catch (err) {
+            console.warn("tt.checkScene sidebar unavailable", err);
+        }
+    }
+
+    protected onNavigateToSidebar() {
+        if (typeof tt === "undefined" || !tt || typeof tt.navigateToScene !== "function") return;
+
+        try {
+            tt.navigateToScene({
+                scene: "sidebar",
+                success: (res) => {
+                    console.log("navigate to sidebar success", res);
+                },
+                fail: (res) => {
+                    console.warn("navigate to sidebar fail", res);
+                },
+            });
+        } catch (err) {
+            console.warn("tt.navigateToScene sidebar unavailable", err);
+        }
     }
 
     /**

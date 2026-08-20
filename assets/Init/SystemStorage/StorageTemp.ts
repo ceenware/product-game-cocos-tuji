@@ -19,6 +19,8 @@ export class UserSetting {
     ShakeSwith = true;
     //显示隐私政策-一次
     showPrivacy = true;
+    //已同意的隐私政策版本。为空或旧版本时需重新明示同意。
+    privacyVersion = '';
 }
 
 //玩家的关卡数据记录

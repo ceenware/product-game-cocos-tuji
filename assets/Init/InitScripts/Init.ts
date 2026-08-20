@@ -15,6 +15,7 @@ const { ccclass, property } = _decorator;
 
 @ccclass('Init')
 export class Init extends Component {
+    public static readonly PrivacyPolicyVersion = 'douyin-2026-08-20';
     protected uiLayer: Node = null;
 
     /**判断系统是否初始化完成 */
@@ -45,7 +46,7 @@ export class Init extends Component {
         StorageSystem.init();
         AudioSystem.init();
         UISystem.init(this.uiLayer);
-        if (!uniSdk.Global.isXiaoMiGame) {
+        if (!this.requiresPreLaunchPrivacyConsent()) {
             this.initDeferredSystems();
         }
     }
@@ -63,8 +64,8 @@ export class Init extends Component {
             UISystem.isInitFinished;
         if (!areCoreSystemsReady) return;
 
-        if (!this.isPrivacyResolved) {
-            if (StorageSystem.getData().userSetting.showPrivacy) {
+        if (this.requiresPreLaunchPrivacyConsent() && !this.isPrivacyResolved) {
+            if (this.shouldShowPrivacyPrompt()) {
                 this.showPrivacyPrompt();
                 return;
             }
@@ -87,6 +88,16 @@ export class Init extends Component {
             this,
         );
         UISystem.showUI(UIEnum.PrivacyUI, { isLobby: false });
+    }
+
+    private requiresPreLaunchPrivacyConsent() {
+        return Boolean(uniSdk.Global.isXiaoMiGame || uniSdk.Global.isTTGame);
+    }
+
+    private shouldShowPrivacyPrompt() {
+        const userSetting = StorageSystem.getData().userSetting;
+        return userSetting.showPrivacy ||
+            userSetting.privacyVersion !== Init.PrivacyPolicyVersion;
     }
 
     private onPrivacyConfirm() {

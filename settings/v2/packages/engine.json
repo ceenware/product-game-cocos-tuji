@@ -12,7 +12,7 @@
         "_value": true
       },
       "gfx-webgl2": {
-        "_value": true
+        "_value": false
       },
       "animation": {
         "_value": true
@@ -27,7 +27,7 @@
         "_value": true
       },
       "xr": {
-        "_value": true
+        "_value": false
       },
       "ui": {
         "_value": true
@@ -65,10 +65,10 @@
         "_value": true
       },
       "primitive": {
-        "_value": true
+        "_value": false
       },
       "profiler": {
-        "_value": true
+        "_value": false
       },
       "occlusion-query": {
         "_value": false
@@ -121,15 +121,11 @@
       "audio",
       "base",
       "gfx-webgl",
-      "gfx-webgl2",
       "intersection-2d",
       "particle",
-      "primitive",
-      "profiler",
       "skeletal-animation",
       "tween",
-      "ui",
-      "xr"
+      "ui"
     ],
     "noDeprecatedFeatures": {
       "value": false,
