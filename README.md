@@ -25,7 +25,7 @@
 2026-06-14：基础信息已在抖音开放平台保存为草稿，分类为“动作竞技 / 射击”，题材标签为“魔幻”，图标使用 `抖音上架材料/icon-600.png`。
 2026-07-27：平台实际 AppID 确认为 `ttf83e8e83665b0a4302`；版本 1.0.2 审核失败，需补充真实游戏截图并修复 Android/iOS 加载失败问题。
 2026-07-27：已修复 LabelAtlas 字体元数据和 `normal_test.mtl` 缺失 Texture2D 引用，重新生成并修补 `build/bytedance-mini-game-fixed` 抖音小游戏包，关闭调试统计显示。
-2026-07-27：已补齐复审截图，推荐上传 `docs/3-抖音上架材料/screenshots/final` 中的三张 PNG。
+2026-07-27：已补齐复审截图，推荐上传 `_docs/3-抖音上架材料/screenshots/final` 中的三张 PNG。
 2026-07-28：已裁剪未使用引擎模块并对发布包 Cocos 引擎 JS 做 Terser 压缩，`build/bytedance-mini-game-fixed` 当前主包 3.95MB、总体积 19.59MB，低于常规主包 4MB / 总包 20MB 限制。
 2026-07-28：已补充抖音侧边栏复访能力调用，`1.0.4` 修复包通过 `tmg upload` 上传成功，二维码信息：https://t.zijieimg.com/iCbPJoq4/。
 2026-07-30：旧测试版本删除后，已重新上传 `1.0.4` 测试版本，二维码信息：https://t.zijieimg.com/iCp257xY/。
