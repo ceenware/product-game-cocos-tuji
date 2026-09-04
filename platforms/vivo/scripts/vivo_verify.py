@@ -250,6 +250,8 @@ def verify_release_rpk(rpk_path: Path, config: dict, version: dict) -> list[dict
     _record(checks, "total-size", total_size <= total_limit, f"outer package is {total_size} bytes, limit is {total_limit}")
     archives = _outer_archives(path, checks)
     _check_nested_archives(archives, config, checks)
+    if "main.rpk" in archives:
+        _main_startup_checks(archives["main.rpk"], config, version, checks, "main.rpk")
     for name, data in archives.items():
         try:
             with ZipFile(BytesIO(data)) as nested:

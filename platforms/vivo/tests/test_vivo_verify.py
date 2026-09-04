@@ -240,6 +240,36 @@ class VivoVerifyTests(unittest.TestCase):
         with self.assertRaises(vivo_verify.VerificationError):
             vivo_verify.verify_release_rpk(rpk, CONFIG, VERSION)
 
+    def test_verify_release_rpk_rejects_broken_startup_chain(self):
+        rpk = make_outer_rpk(startup_source="require('runtime-adapter/ral.js');")
+        with self.assertRaisesRegex(vivo_verify.VerificationError, "startup.*missing"):
+            vivo_verify.verify_release_rpk(rpk, CONFIG, VERSION)
+
+    def test_verify_cocos_build_cli_succeeds(self):
+        root = make_cocos_fixture()
+        result = self._run_cli("verify-cocos-build.py", root)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_verify_cocos_build_cli_fails(self):
+        root = make_cocos_fixture(manifest={**valid_manifest(), "versionCode": 99})
+        result = self._run_cli("verify-cocos-build.py", root)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_verify_startup_entry_cli_succeeds(self):
+        rpk = make_outer_rpk()
+        result = self._run_cli("verify-startup-entry.py", rpk)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_verify_startup_entry_cli_fails(self):
+        rpk = make_outer_rpk(startup_source="require('runtime-adapter/ral.js');")
+        result = self._run_cli("verify-startup-entry.py", rpk)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_verify_release_rpk_cli_succeeds(self):
+        rpk = make_outer_rpk()
+        result = self._run_cli("verify-release-rpk.py", rpk)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_verify_release_rpk_writes_reports_and_cli_returns_nonzero_on_failure(self):
         rpk = make_outer_rpk(omit={"usr_Game.rpk"})
         report_json = Path(tempfile.mkdtemp(prefix="vivo-report-")) / "validation-report.json"
@@ -267,6 +297,54 @@ class VivoVerifyTests(unittest.TestCase):
         payload = json.loads(report_json.read_text(encoding="utf-8"))
         self.assertTrue(any(item["check"] == "split-archives" for item in payload))
         self.assertIn("failed", result.stdout.lower() + result.stderr.lower())
+
+    def test_each_cli_writes_requested_single_report(self):
+        targets = (
+            ("verify-cocos-build.py", make_cocos_fixture()),
+            ("verify-startup-entry.py", make_outer_rpk()),
+            ("verify-release-rpk.py", make_outer_rpk()),
+        )
+        for cli_name, target in targets:
+            with self.subTest(cli=cli_name, report="json"):
+                report_json = Path(tempfile.mkdtemp(prefix="vivo-single-report-json-")) / "validation-report.json"
+                result = self._run_cli(cli_name, target, report_json=report_json)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertTrue(report_json.is_file())
+                self.assertIsInstance(json.loads(report_json.read_text(encoding="utf-8")), list)
+
+            with self.subTest(cli=cli_name, report="text"):
+                report_text = Path(tempfile.mkdtemp(prefix="vivo-single-report-text-")) / "validation-report.txt"
+                result = self._run_cli(cli_name, target, report_text=report_text)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertTrue(report_text.is_file())
+                self.assertIn("PASS", report_text.read_text(encoding="utf-8"))
+
+    def _run_cli(
+        self,
+        cli_name: str,
+        target: Path,
+        *,
+        report_json: Optional[Path] = None,
+        report_text: Optional[Path] = None,
+    ) -> subprocess.CompletedProcess[str]:
+        version_file = self._write_version_file(target.parent)
+        command = [
+            sys.executable,
+            str(SCRIPTS / cli_name),
+            "--config",
+            str(ROOT / "release.json"),
+            "--version-file",
+            str(version_file),
+        ]
+        if cli_name == "verify-cocos-build.py":
+            command.append(str(target))
+        else:
+            command.append(str(target))
+        if report_json:
+            command.extend(["--report-json", str(report_json)])
+        if report_text:
+            command.extend(["--report-text", str(report_text)])
+        return subprocess.run(command, capture_output=True, text=True)
 
     def _write_version_file(self, directory: Path) -> Path:
         path = directory / "version.json"

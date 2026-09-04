@@ -7,6 +7,14 @@ from pathlib import Path
 from vivo_verify import VerificationError, verify_release_rpk, write_reports
 
 
+def _write_requested_reports(checks, report_json, report_text) -> None:
+    if not report_json and not report_text:
+        return
+    json_path = report_json or report_text.with_suffix(".json")
+    text_path = report_text or report_json.with_suffix(".txt")
+    write_reports(checks, json_path, text_path)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("rpk", type=Path)
@@ -20,15 +28,13 @@ def main() -> int:
         version = json.loads(args.version_file.read_text(encoding="utf-8"))
         checks = verify_release_rpk(args.rpk, config, version)
     except VerificationError as exc:
-        if args.report_json and args.report_text:
-            write_reports(exc.checks, args.report_json, args.report_text)
+        _write_requested_reports(exc.checks, args.report_json, args.report_text)
         print(f"[vivo] release verification failed: {exc}", file=sys.stderr)
         return 1
     except (OSError, json.JSONDecodeError) as exc:
         print(f"[vivo] release verification failed: {exc}", file=sys.stderr)
         return 1
-    if args.report_json and args.report_text:
-        write_reports(checks, args.report_json, args.report_text)
+    _write_requested_reports(checks, args.report_json, args.report_text)
     print(f"[vivo] release verification passed: {args.rpk}")
     return 0
 
