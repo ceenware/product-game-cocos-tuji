@@ -180,6 +180,96 @@ test('installs Cocos from a Windows archive with an NSIS installer', async () =>
   }
 });
 
+test('uses the default Windows installer runner with an injected process', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cocos-install-default-'));
+  const toolCache = path.join(root, 'cache');
+  const versionRoot = path.join(toolCache, 'cocos-creator', '3.6.2');
+  const executable = path.join(versionRoot, 'CocosCreator.exe');
+  let installerPath;
+  let installerArgs;
+
+  try {
+    const result = await installCocos({
+      runnerOS: 'Windows',
+      expectedVersion: '3.6.2',
+      toolCache,
+      cocosConfig: { windowsUrl: 'https://example.test/cocos.zip' },
+      download: async (_url, destination) => fs.writeFileSync(destination, 'zip-fixture'),
+      extract: async (_archive, destination) => {
+        fs.mkdirSync(destination, { recursive: true });
+        fs.writeFileSync(path.join(destination, 'CocosCreator-3.6.2-setup.exe'), 'installer');
+      },
+      spawn: (installer, args) => {
+        installerPath = installer;
+        installerArgs = [installer, args];
+        fs.writeFileSync(executable, '');
+        return { status: 0 };
+      },
+      inspectVersion: (candidate) => candidate === executable ? '3.6.2' : '',
+    });
+
+    assert.equal(result, executable);
+    assert.equal(installerPath && path.basename(installerPath), 'CocosCreator-3.6.2-setup.exe');
+    assert.deepEqual(installerArgs && installerArgs[1], ['/S', `/D=${versionRoot}`]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('fails when the default Windows installer is terminated by a signal', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cocos-install-signal-'));
+
+  try {
+    await assert.rejects(() => installCocos({
+      runnerOS: 'Windows',
+      expectedVersion: '3.6.2',
+      toolCache: path.join(root, 'cache'),
+      cocosConfig: { windowsUrl: 'https://example.test/cocos.zip' },
+      download: async (_url, destination) => fs.writeFileSync(destination, 'zip-fixture'),
+      extract: async (_archive, destination) => {
+        fs.mkdirSync(destination, { recursive: true });
+        fs.writeFileSync(path.join(destination, 'CocosCreator-3.6.2-setup.exe'), 'installer');
+      },
+      spawn: () => ({ status: null, signal: 'SIGTERM' }),
+    }), /terminated by signal SIGTERM/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('fails when the Cocos download is empty', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cocos-install-empty-'));
+
+  try {
+    await assert.rejects(() => installCocos({
+      runnerOS: 'macOS',
+      expectedVersion: '3.6.2',
+      toolCache: path.join(root, 'cache'),
+      cocosConfig: { macosUrl: 'https://example.test/cocos.zip' },
+      download: async () => {},
+    }), /download is empty/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('fails when archive extraction returns a nonzero status', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cocos-install-extract-'));
+
+  try {
+    await assert.rejects(() => installCocos({
+      runnerOS: 'macOS',
+      expectedVersion: '3.6.2',
+      toolCache: path.join(root, 'cache'),
+      cocosConfig: { macosUrl: 'https://example.test/cocos.zip' },
+      download: async (_url, destination) => fs.writeFileSync(destination, 'zip-fixture'),
+      extract: async () => ({ status: 1 }),
+    }), /archive extraction exited with status 1/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('fails when the Windows Cocos installer exits nonzero', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cocos-install-fail-'));
 

@@ -210,6 +210,8 @@ function shellQuotePowerShell(value) {
 
 function assertProcessSuccess(result, label) {
   if (result?.error) throw result.error;
+  if (result?.signal) throw new Error(`${label} terminated by signal ${result.signal}`);
+  if (result?.status === null) throw new Error(`${label} exited without a status`);
   if (typeof result?.status === 'number' && result.status !== 0) throw new Error(`${label} exited with status ${result.status}`);
 }
 
@@ -303,7 +305,8 @@ async function installCocos({
   inspectVersion = (file) => inspectCocosVersion(file, runnerOS),
   download = downloadFile,
   extract = defaultExtract,
-  runInstaller = defaultRunInstaller,
+  runInstaller,
+  spawn = spawnSync,
   execFileSyncImpl = execFileSync,
 } = {}) {
   requireSupportedRunner(runnerOS);
@@ -315,6 +318,7 @@ async function installCocos({
   const temporaryRoot = fs.mkdtempSync(path.join(cacheRoot, `.cocos-${expectedVersion}-`));
   const archivePath = path.join(temporaryRoot, 'cocos-creator.zip');
   const extractionRoot = path.join(temporaryRoot, 'extracted');
+  const installerRunner = runInstaller || ((installer, args) => defaultRunInstaller(installer, args, spawn));
 
   try {
     await download(url, archivePath);
@@ -337,7 +341,7 @@ async function installCocos({
       fs.mkdirSync(versionRoot, { recursive: true });
       if (installer) {
         const installerArgs = /\.msi$/i.test(installer) ? ['/i', installer, '/qn', `INSTALLDIR=${versionRoot}`] : ['/S', `/D=${versionRoot}`];
-        const result = await runInstaller(installer, installerArgs, runnerOS);
+        const result = await installerRunner(installer, installerArgs);
         assertProcessSuccess(result, 'Cocos Creator installer');
       } else {
         fs.cpSync(extractionRoot, versionRoot, { recursive: true });
