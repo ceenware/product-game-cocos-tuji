@@ -2,7 +2,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 function readJson(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  const value = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${filePath}: expected a JSON object`);
+  }
+  return value;
 }
 
 function writeJson(filePath, value) {
@@ -21,6 +25,7 @@ function patchCocosBuild({ buildDir, config, version }) {
   const compileConfigPath = path.join(buildDir, 'cocos.compile.config.json');
   const manifestPath = path.join(buildDir, 'src', 'manifest.json');
   const compile = readJson(compileConfigPath);
+  const manifest = readJson(manifestPath);
 
   if (compile.platform !== 'vivo-mini-game' || compile.buildEngineParam?.platform !== 'VIVO') {
     throw new Error('expected vivo-mini-game export');
@@ -38,15 +43,14 @@ function patchCocosBuild({ buildDir, config, version }) {
     minPlatformVersion: config.minPlatformVersion,
   });
   if (compile.appTemplateData) compile.appTemplateData.customVersion = version.versionName;
-  writeJson(compileConfigPath, compile);
-
-  const manifest = readJson(manifestPath);
   Object.assign(manifest, {
     package: config.packageName,
     versionName: version.versionName,
     versionCode: version.versionCode,
     minPlatformVersion: config.minPlatformVersion,
   });
+
+  writeJson(compileConfigPath, compile);
   writeJson(manifestPath, manifest);
 
   return { compileConfigPath, manifestPath };

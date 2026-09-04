@@ -90,3 +90,53 @@ test('CLI resolves paths, loads inputs, and patches the export', () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('does not mutate compile config when manifest JSON is malformed', () => {
+  const root = makeFixture();
+  const compilePath = path.join(root, 'cocos.compile.config.json');
+  const manifestPath = path.join(root, 'src', 'manifest.json');
+  const compileBefore = fs.readFileSync(compilePath);
+  fs.writeFileSync(manifestPath, '{ malformed');
+  const manifestBefore = fs.readFileSync(manifestPath);
+
+  try {
+    assert.throws(() => patchCocosBuild({ buildDir: root, config, version }), SyntaxError);
+    assert.deepEqual(fs.readFileSync(compilePath), compileBefore);
+    assert.deepEqual(fs.readFileSync(manifestPath), manifestBefore);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('does not mutate JSON files when no Cocos engine bundle matches', () => {
+  const root = makeFixture({ engineFile: 'engine.js' });
+  const compilePath = path.join(root, 'cocos.compile.config.json');
+  const manifestPath = path.join(root, 'src', 'manifest.json');
+  const compileBefore = fs.readFileSync(compilePath);
+  const manifestBefore = fs.readFileSync(manifestPath);
+
+  try {
+    assert.throws(() => patchCocosBuild({ buildDir: root, config, version }), /expected one .*found 0/);
+    assert.deepEqual(fs.readFileSync(compilePath), compileBefore);
+    assert.deepEqual(fs.readFileSync(manifestPath), manifestBefore);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('does not mutate JSON files when multiple Cocos engine bundles match', () => {
+  const root = makeFixture({ engineFile: 'cc.first.js' });
+  const compilePath = path.join(root, 'cocos.compile.config.json');
+  const manifestPath = path.join(root, 'src', 'manifest.json');
+  fs.writeFileSync(path.join(root, 'src', 'cocos-js', 'cc.second.js'), 'CC_VIVO');
+  const compileBefore = fs.readFileSync(compilePath);
+  const manifestBefore = fs.readFileSync(manifestPath);
+
+  try {
+    assert.throws(() => patchCocosBuild({ buildDir: root, config, version }), /expected one .*found 2/);
+    assert.deepEqual(fs.readFileSync(compilePath), compileBefore);
+    assert.deepEqual(fs.readFileSync(manifestPath), manifestBefore);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
