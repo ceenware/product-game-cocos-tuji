@@ -72,6 +72,15 @@ function revalidateArtifactChecksum(rpkPath, checksumPath) {
 
 async function build(options) {
   const args = options.args || options;
+  const dependencies = options.dependencies || {};
+  const spawnImpl = dependencies.spawn || spawnSync;
+  const generateTestCertificateImpl = dependencies.generateTestCertificate || generateTestCertificate;
+  const patchCocosBuildImpl = dependencies.patchCocosBuild || patchCocosBuild;
+  const patchRuntimeProjectImpl = dependencies.patchRuntimeProject || patchRuntimeProject;
+  const patchMinPlatformImpl = dependencies.patchMinPlatform || patchMinPlatform;
+  const runPythonVerifierImpl = dependencies.runPythonVerifier || runPythonVerifier;
+  const packageRpkImpl = dependencies.packageRpk || packageRpk;
+  const assembleArtifactsImpl = dependencies.assembleArtifacts || assembleArtifacts;
   const configPath = args.config || path.join(__dirname, '..', 'release.json');
   const config = loadReleaseConfig(configPath);
   const version = JSON.parse(fs.readFileSync(args['version-file'], 'utf8'));
@@ -82,28 +91,28 @@ async function build(options) {
   fs.rmSync(args.workspace, { recursive: true, force: true });
   fs.mkdirSync(args.workspace, { recursive: true });
   const buildRoot = path.join(args.workspace, 'build');
-  const cocosResult = spawnSync(args.cocos, buildCocosArguments(args['project-root'], buildRoot), { stdio: 'inherit' });
+  const cocosResult = spawnImpl(args.cocos, buildCocosArguments(args['project-root'], buildRoot), { stdio: 'inherit' });
   if (cocosResult.status !== 0) throw new Error(`Cocos Creator exited with status ${cocosResult.status}`);
   const projectDir = path.join(buildRoot, 'vivo-mini-game');
   if (!fs.existsSync(projectDir)) throw new Error(`missing Cocos export: ${projectDir}`);
-  patchCocosBuild({ buildDir: projectDir, config, version });
-  runPythonVerifier(path.join(__dirname, 'verify-cocos-build.py'), projectDir, configPath, args['version-file']);
-  patchRuntimeProject({ projectDir, adapterRoot: args['adapter-root'], config, version });
-  patchMinPlatform({ quickgameRoot: path.join(__dirname, '..', 'node_modules', 'quickgame-cli'), minPlatformVersion: config.minPlatformVersion });
+  patchCocosBuildImpl({ buildDir: projectDir, config, version });
+  runPythonVerifierImpl(path.join(__dirname, 'verify-cocos-build.py'), projectDir, configPath, args['version-file']);
+  patchRuntimeProjectImpl({ projectDir, adapterRoot: args['adapter-root'], config, version });
+  patchMinPlatformImpl({ quickgameRoot: path.join(__dirname, '..', 'node_modules', 'quickgame-cli'), minPlatformVersion: config.minPlatformVersion });
   let signing = { privateKey: args['private-key'], certificate: args.certificate };
   const outputRpk = path.join(args.workspace, `${config.packageName}.rpk`);
   let temporarySigningDir;
   try {
     if (signingMode === 'test') {
       temporarySigningDir = path.join(args.workspace, 'sign');
-      signing = generateTestCertificate(args.openssl, temporarySigningDir);
+      signing = generateTestCertificateImpl(args.openssl, temporarySigningDir);
     }
-    const signingResult = await packageRpk({ projectDir, config, privateKeyPath: signing.privateKey, certificatePath: signing.certificate, outputPath: outputRpk });
+    const signingResult = await packageRpkImpl({ projectDir, config, privateKeyPath: signing.privateKey, certificatePath: signing.certificate, outputPath: outputRpk });
     const reportJson = path.join(args.workspace, 'validation-report.json');
     const reportText = path.join(args.workspace, 'validation-report.txt');
-    runPythonVerifier(path.join(__dirname, 'verify-release-rpk.py'), outputRpk, configPath, args['version-file'], { reportJson, reportText });
+    runPythonVerifierImpl(path.join(__dirname, 'verify-release-rpk.py'), outputRpk, configPath, args['version-file'], { reportJson, reportText });
     const checks = JSON.parse(fs.readFileSync(reportJson, 'utf8'));
-    const artifactResult = assembleArtifacts({
+    const artifactResult = assembleArtifactsImpl({
       inputRpk: outputRpk,
       outputDir: args.artifacts,
       config,

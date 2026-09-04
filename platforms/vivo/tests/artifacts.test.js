@@ -6,8 +6,8 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-const { assembleArtifacts } = require('../lib/artifacts');
-const { revalidateArtifactChecksum } = require('../scripts/build');
+const { assembleArtifacts, formatValidationReport } = require('../lib/artifacts');
+const { build, revalidateArtifactChecksum } = require('../scripts/build');
 const { spawnSync: runNode } = require('node:child_process');
 
 const config = require('../release.json');
@@ -118,6 +118,10 @@ test('writes stable public metadata and validation reports with trailing newline
   }
 });
 
+test('keeps an empty validation report newline-terminated', () => {
+  assert.equal(formatValidationReport([]), '\n');
+});
+
 test('revalidates the copied RPK against SHA256SUMS', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vivo-checksum-'));
   const rpkPath = path.join(directory, 'release.rpk');
@@ -196,6 +200,77 @@ test('writes build metadata through the CLI without private fields', () => {
     assert.equal(JSON.parse(output).sourceSha, 'abc123');
     assert.equal(output.includes('privateKeyPath'), false);
     assert.equal(output.endsWith('\n'), true);
+  } finally {
+    cleanup(directory);
+  }
+});
+
+test('assembles artifacts only after final verification and cleans test signing files', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vivo-build-integration-'));
+  const projectRoot = path.join(directory, 'project');
+  const workspace = path.join(directory, 'workspace');
+  const artifacts = path.join(directory, 'artifacts');
+  const versionPath = path.join(directory, 'version.json');
+  const configPath = path.join(__dirname, '..', 'release.json');
+  const order = [];
+  fs.mkdirSync(projectRoot, { recursive: true });
+  fs.writeFileSync(versionPath, `${JSON.stringify(version)}\n`);
+
+  try {
+    const result = await build({
+      'project-root': projectRoot,
+      workspace,
+      artifacts,
+      'version-file': versionPath,
+      config: configPath,
+      cocos: 'cocos-fixture',
+      'adapter-root': path.join(directory, 'adapter'),
+      openssl: 'openssl-fixture',
+      'signing-mode': 'test',
+      dependencies: {
+        spawn: () => {
+          order.push('cocos');
+          fs.mkdirSync(path.join(workspace, 'build', 'vivo-mini-game'), { recursive: true });
+          return { status: 0 };
+        },
+        patchCocosBuild: () => order.push('patch-cocos'),
+        patchRuntimeProject: () => order.push('patch-runtime'),
+        patchMinPlatform: () => order.push('patch-cli'),
+        generateTestCertificate: (openssl, signingDirectory) => {
+          order.push('certificate');
+          fs.mkdirSync(signingDirectory, { recursive: true });
+          const privateKey = path.join(signingDirectory, 'private.pem');
+          const certificate = path.join(signingDirectory, 'certificate.pem');
+          fs.writeFileSync(privateKey, 'key');
+          fs.writeFileSync(certificate, 'certificate');
+          return { privateKey, certificate };
+        },
+        packageRpk: async ({ outputPath }) => {
+          order.push('package');
+          fs.writeFileSync(outputPath, 'signed-rpk');
+          return { outputPath, certificateFingerprint: 'AA:BB' };
+        },
+        runPythonVerifier: (_script, _target, _config, _version, options = {}) => {
+          order.push(options.reportJson ? 'verify-final' : 'verify-cocos');
+          if (options.reportJson) fs.writeFileSync(options.reportJson, '[{"check":"rpk","ok":true,"message":"verified"}]');
+        },
+      },
+    });
+
+    assert.deepEqual(order, ['cocos', 'patch-cocos', 'verify-cocos', 'patch-runtime', 'patch-cli', 'certificate', 'package', 'verify-final']);
+    assert.equal(result.artifacts.length, 5);
+    assert.deepEqual(result.artifacts.map((file) => path.basename(file)).sort(), [
+      'SHA256SUMS',
+      'build-metadata.json',
+      'com.yongzhe.huoxiantuwei.vivominigame-v1.0.11.rpk',
+      'validation-report.json',
+      'validation-report.txt',
+    ]);
+    assert.equal(fs.existsSync(path.join(workspace, 'sign')), false);
+    assert.doesNotThrow(() => revalidateArtifactChecksum(
+      path.join(artifacts, 'com.yongzhe.huoxiantuwei.vivominigame-v1.0.11.rpk'),
+      path.join(artifacts, 'SHA256SUMS'),
+    ));
   } finally {
     cleanup(directory);
   }

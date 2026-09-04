@@ -22,7 +22,7 @@ function formatValidationReport(checks) {
     const status = check.ok ? 'PASS' : 'FAIL';
     const message = formatCheckMessage(check);
     return `[${name}] ${status}${message ? `: ${message}` : ''}`;
-  }).join('\n') + (checks.length ? '\n' : '');
+  }).join('\n') + '\n';
 }
 
 function assembleArtifacts({ inputRpk, outputDir, config, version, metadata = {}, checks = [] } = {}) {
