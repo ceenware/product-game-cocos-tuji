@@ -62,6 +62,7 @@ jobs:
     needs: select-runner
     runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
     env:
+      COCOS_TOOL_CACHE: ${{ runner.tool_cache }}
       COCOS_CACHE_DIR: ${{ runner.tool_cache }}/cocos-creator/3.6.2
     steps:
       - name: Checkout source and tags
@@ -110,7 +111,7 @@ jobs:
       - name: Ensure Cocos Creator and OpenSSL
         id: cocos
         shell: bash
-        run: node platforms/vivo/scripts/ensure-cocos.js --config "$GITHUB_WORKSPACE/platforms/vivo/release.json" --tool-cache "$COCOS_CACHE_DIR"
+        run: node platforms/vivo/scripts/ensure-cocos.js --config "$GITHUB_WORKSPACE/platforms/vivo/release.json" --tool-cache "$COCOS_TOOL_CACHE"
 
       - name: Build Vivo validation package
         shell: bash
