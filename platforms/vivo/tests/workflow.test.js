@@ -19,6 +19,22 @@ function section(yaml, heading, indent) {
   return lines.slice(start, end).join('\n');
 }
 
+function namedStep(workflow, name, indent = 6) {
+  const lines = workflow.split('\n');
+  const stepHeading = `${' '.repeat(indent)}- name: ${name}`;
+  const start = lines.findIndex((line) => line === stepHeading);
+  assert.notEqual(start, -1, `missing step ${name}`);
+  let end = lines.length;
+  const nextStep = new RegExp(`^${' '.repeat(indent)}- name: `);
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (nextStep.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  return lines.slice(start, end).join('\n');
+}
+
 test('vivo workflow has one selected build runner and no Linux Cocos build', () => {
   const yaml = fs.readFileSync(path.join(__dirname, '..', '..', '..', '.github', 'workflows', 'release-vivo.yml'), 'utf8');
   const topLevelKeys = (yaml.match(/^(?:name|on|permissions|concurrency|jobs):(?:\s.*)?$/gm) || [])
@@ -29,6 +45,8 @@ test('vivo workflow has one selected build runner and no Linux Cocos build', () 
   const dispatchSection = section(yaml, 'workflow_dispatch', 2);
   const selectRunnerSection = section(jobsSection, 'select-runner', 2);
   const buildSection = section(jobsSection, 'build', 2);
+  const selectStep = namedStep(selectRunnerSection, 'Select build runner');
+  const buildStep = namedStep(buildSection, 'Build Vivo validation package');
 
   assert.deepEqual(topLevelKeys, ['name', 'on', 'permissions', 'concurrency', 'jobs']);
   assert.match(yaml, /^name: Release Vivo$/m);
@@ -50,10 +68,11 @@ test('vivo workflow has one selected build runner and no Linux Cocos build', () 
   assert.doesNotMatch(yaml, /^\s*push:/m);
   assert.deepEqual(jobs, ['  select-runner:', '  build:']);
   assert.match(selectRunnerSection, /^    runs-on: ubuntu-latest$/m);
-  assert.match(selectRunnerSection, /process\.env\.GITHUB_REF_NAME/);
-  assert.match(selectRunnerSection, /config\.branch/);
-  assert.match(selectRunnerSection, /JSON\.stringify\(runner\)/);
-  assert.doesNotMatch(selectRunnerSection, /ensure-cocos|build\.js|COCOS_/i);
+  assert.match(selectStep, /const actualBranch = process\.env\.GITHUB_REF_NAME;\n\s+if \(actualBranch !== config\.branch\) \{[\s\S]*?throw new Error/);
+  assert.match(selectStep, /const runner = config\.runners\[requestedRunner\];/);
+  assert.match(selectStep, /if \(!hostedRunner && !selfHostedRunner\)/);
+  assert.match(selectStep, /fs\.appendFileSync\(process\.env\.GITHUB_OUTPUT, `runner=\$\{JSON\.stringify\(runner\)\}\\n`\);/);
+  assert.doesNotMatch(selectStep, /ensure-cocos|build\.js|COCOS_/i);
   assert.match(yaml, /windows-2022/);
   assert.match(yaml, /macos-15-intel/);
   assert.match(yaml, /self-hosted-windows/);
@@ -80,17 +99,47 @@ test('vivo workflow has one selected build runner and no Linux Cocos build', () 
   assert.match(buildSection, /path: artifacts\/vivo/);
   assert.match(buildSection, /name: vivo-validation-\$\{\{ runner\.os \}\}-\$\{\{ github\.sha \}\}/);
   assert.match(buildSection, /- name: Verify Bash on Windows[\s\S]*?^        if: runner\.os == 'Windows'$\n        shell: pwsh[\s\S]*?Get-Command bash/m);
+  assert.deepEqual(
+    [...buildSection.matchAll(/^      - name: (.+)$/gm)].map((match) => match[1]),
+    [
+      'Checkout source and tags',
+      'Set up Node.js',
+      'Set up Python',
+      'Cache Cocos Creator',
+      'Verify Bash on Windows',
+      'Install Vivo release dependencies',
+      'Run Vivo tests',
+      'Resolve Vivo version',
+      'Ensure Cocos Creator and OpenSSL',
+      'Build Vivo validation package',
+      'Upload Vivo validation artifacts',
+    ],
+  );
+  const versionStep = namedStep(buildSection, 'Resolve Vivo version');
+  assert.match(versionStep, /^        id: version$/m);
+  assert.match(versionStep, /--output "\$version_file"/);
+  assert.match(versionStep, /versionFile=%s/);
+  assert.match(buildStep, /node platforms\/vivo\/scripts\/build\.js/);
+  assert.match(buildStep, /--version-file "\$\{\{ steps\.version\.outputs\.versionFile \}\}"/);
+  assert.match(buildStep, /--signing-mode test/);
+  assert.doesNotMatch(versionStep, /--signing-mode/);
+  assert.doesNotMatch(buildStep, /gh\s+(?:api|release)|git\s+tag/i);
   const requiredSteps = [
-    'npm ci --ignore-scripts --prefix platforms/vivo',
-    'npm test --prefix platforms/vivo',
-    'platforms/vivo/scripts/resolve-version.js',
-    'platforms/vivo/scripts/ensure-cocos.js',
-    'platforms/vivo/scripts/build.js',
-    'actions/upload-artifact@v4',
+    'Checkout source and tags',
+    'Set up Node.js',
+    'Set up Python',
+    'Cache Cocos Creator',
+    'Verify Bash on Windows',
+    'Install Vivo release dependencies',
+    'Run Vivo tests',
+    'Resolve Vivo version',
+    'Ensure Cocos Creator and OpenSSL',
+    'Build Vivo validation package',
+    'Upload Vivo validation artifacts',
   ];
   let previousIndex = -1;
   for (const marker of requiredSteps) {
-    const index = buildSection.indexOf(marker);
+    const index = buildSection.indexOf(`- name: ${marker}`);
     assert.ok(index > previousIndex, `expected ${marker} after the previous build step`);
     previousIndex = index;
   }
