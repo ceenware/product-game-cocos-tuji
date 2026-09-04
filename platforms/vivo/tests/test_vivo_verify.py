@@ -215,6 +215,11 @@ class VivoVerifyTests(unittest.TestCase):
         self.assertTrue(all(item["ok"] for item in checks))
         self.assertTrue(any(item["check"] == "sha256" and item["message"].startswith("sha256=") for item in checks))
 
+    def test_verify_release_rpk_accepts_quickgame_full_package_entry(self):
+        rpk = make_outer_rpk(extra_archives=[f"{PACKAGE}.rpk"])
+        checks = vivo_verify.verify_release_rpk(rpk, CONFIG, VERSION)
+        self.assertTrue(all(item["ok"] for item in checks))
+
     def test_verify_cocos_build_rejects_manifest_version_mismatch(self):
         root = make_cocos_fixture(manifest={**valid_manifest(), "versionCode": 99})
         with self.assertRaisesRegex(vivo_verify.VerificationError, "versionCode"):

@@ -230,9 +230,10 @@ def verify_startup_entry(rpk_path: Path, config: dict, version: dict) -> list[di
 
 def _check_nested_archives(archives: dict[str, bytes], config: dict, checks: list[dict[str, Any]]) -> None:
     expected = ["main.rpk", *[f"usr_{name}.rpk" for name in config.get("subpackages", [])]]
+    full_package = f"{config['packageName']}.rpk"
     actual = sorted(archives)
     missing = [name for name in expected if name not in archives]
-    unexpected = [name for name in actual if name not in expected]
+    unexpected = [name for name in actual if name not in expected and name != full_package]
     _record(checks, "split-archives", not missing, f"missing split archive(s): {', '.join(missing)}" if missing else "all configured split archives are present")
     _record(checks, "split-archives-unexpected", not unexpected, f"unexpected split archive(s): {', '.join(unexpected)}" if unexpected else "no unexpected split archives")
 
@@ -283,7 +284,7 @@ def verify_release_rpk(rpk_path: Path, config: dict, version: dict) -> list[dict
                                 _record(checks, "release-settings-json", False, "release settings.json must be an object")
                         except json.JSONDecodeError as exc:
                             _record(checks, "release-settings-json", False, f"invalid release settings.json: {exc}")
-                else:
+                elif name != f"{config['packageName']}.rpk":
                     bundle_name = name.removeprefix("usr_").removesuffix(".rpk")
                     for required in (f"subpackages/{bundle_name}/main.js", f"subpackages/{bundle_name}/index.js", f"subpackages/{bundle_name}/config.json"):
                         _record(checks, f"{name}-{required}", required in nested.namelist(), f"{name} missing {required}" if required not in nested.namelist() else f"{name} contains {required}")

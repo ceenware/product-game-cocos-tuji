@@ -52,7 +52,81 @@ function assertSignedByCertificate(rpkBuffer, certificate) {
   if (!buffer.includes(der)) {
     throw new Error('RPK does not embed the supplied certificate');
   }
+  if (!verifyRpkSignature(buffer, new crypto.X509Certificate(readPem(certificate)).publicKey)) {
+    throw new Error('RPK signature does not verify with the supplied certificate');
+  }
   return true;
+}
+
+function verifyRpkSignature(buffer, publicKey) {
+  const eocd = buffer.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  if (eocd < 0 || eocd + 22 > buffer.length) return false;
+  const centralOffset = buffer.readUInt32LE(eocd + 16);
+  if (centralOffset < 16 || centralOffset > buffer.length) return false;
+  const magic = centralOffset - 16;
+  if (!buffer.subarray(magic, magic + 16).equals(Buffer.from('RPK Sig Block 42'))) return false;
+  const blockSize = buffer.readUInt32LE(magic - 8);
+  const start = magic - blockSize + 8;
+  if (start < 0 || start + 8 > magic || buffer.readUInt32LE(start) !== blockSize) return false;
+
+  const sectionDigest = (sectionStart, sectionEnd) => {
+    if (sectionStart < 0 || sectionEnd < sectionStart || sectionEnd > buffer.length) return null;
+    const section = Buffer.alloc(5 + sectionEnd - sectionStart);
+    section[0] = 0xa5;
+    section.writeInt32LE(sectionEnd - sectionStart, 1);
+    buffer.copy(section, 5, sectionStart, sectionEnd);
+    return crypto.createHash('sha256').update(section).digest();
+  };
+  const headerDigest = sectionDigest(0, start);
+  const centralDigest = sectionDigest(centralOffset, eocd);
+  const originalFooter = Buffer.from(buffer.subarray(eocd));
+  if (originalFooter.length < 20) return false;
+  originalFooter.writeUInt32LE(start, 16);
+  const footerDigest = crypto.createHash('sha256').update(Buffer.concat([
+    Buffer.from([0xa5]),
+    (() => { const size = Buffer.alloc(4); size.writeInt32LE(originalFooter.length); return size; })(),
+    originalFooter,
+  ])).digest();
+  if (!headerDigest || !centralDigest || !footerDigest) return false;
+  const sectionDigestList = Buffer.alloc(5 + 3 * 32);
+  sectionDigestList[0] = 0x5a;
+  sectionDigestList.writeInt32LE(3, 1);
+  headerDigest.copy(sectionDigestList, 5);
+  centralDigest.copy(sectionDigestList, 37);
+  footerDigest.copy(sectionDigestList, 69);
+  const expectedSectionDigest = crypto.createHash('sha256').update(sectionDigestList).digest();
+
+  let offset = start + 8;
+  while (offset + 16 <= magic) {
+    const valueBlockSize = buffer.readUInt32LE(offset);
+    const id = buffer.readUInt32LE(offset + 8);
+    const valueSize = buffer.readUInt32LE(offset + 12);
+    const valueStart = offset + 16;
+    if (valueStart + valueSize > magic) return false;
+    if (id === 16777473 && valueSize >= 16) {
+      const signedDataSize = buffer.readUInt32LE(valueStart + 4);
+      const signedDataStart = valueStart + 8;
+      const signaturesSizeOffset = signedDataStart + signedDataSize;
+      if (signaturesSizeOffset + 16 > valueStart + valueSize) return false;
+      const signedData = buffer.subarray(signedDataStart, signaturesSizeOffset);
+      if (signedData.length < 16 || signedData.readUInt32LE(4) !== 40 || signedData.readUInt32LE(8) !== 259 || signedData.readUInt32LE(12) !== 32) return false;
+      if (!signedData.subarray(16, 48).equals(expectedSectionDigest)) return false;
+      const signatureItem = signaturesSizeOffset + 4;
+      const signatureId = buffer.readUInt32LE(signatureItem + 4);
+      const signatureLength = buffer.readUInt32LE(signatureItem + 8);
+      const signatureStart = signatureItem + 12;
+      if (signatureId !== 259 || signatureStart + signatureLength > valueStart + valueSize) return false;
+      return crypto.verify(
+        'RSA-SHA256',
+        signedData,
+        publicKey,
+        buffer.subarray(signatureStart, signatureStart + signatureLength),
+      );
+    }
+    if (valueBlockSize < 8 || offset + 8 + valueBlockSize > magic) return false;
+    offset += 8 + valueBlockSize;
+  }
+  return false;
 }
 
 function expectedArchiveNames(config) {
@@ -148,4 +222,5 @@ module.exports = {
   assertSignedByCertificate,
   expectedArchiveNames,
   signRpkSet,
+  verifyRpkSignature,
 };

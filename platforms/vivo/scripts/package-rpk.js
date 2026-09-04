@@ -20,8 +20,14 @@ async function packageRpk({ projectDir, config, privateKeyPath, certificatePath,
     includeFileExt: '.pem,.pkm,.webp',
   };
   await compileFn(options, 'prod', projectDir);
-  const distTempDir = path.join(projectDir, 'dist_temp');
-  ensureArchives(distTempDir, config);
+  const outputDirectories = [path.join(projectDir, 'dist_temp'), path.join(projectDir, 'dist')];
+  const distTempDir = outputDirectories.find((directory) => {
+    if (!fs.existsSync(directory)) return false;
+    return [...expectedArchiveNames(config), `${config.packageName}.rpk`].every((name) => fs.existsSync(path.join(directory, name)));
+  });
+  if (!distTempDir) {
+    throw new Error(`compiled output must contain configured archives in ${outputDirectories.join(' or ')}`);
+  }
   return signRpkSet({ distTempDir, config, privateKeyPath, certificatePath, outputPath });
 }
 

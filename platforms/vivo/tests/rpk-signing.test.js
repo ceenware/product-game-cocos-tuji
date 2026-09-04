@@ -6,7 +6,7 @@ const path = require('node:path');
 const test = require('node:test');
 const JSZip = require('jszip');
 
-const { assertKeyMatchesCertificate, assertSignedByCertificate, signRpkSet } = require('../lib/rpk-signing');
+const { assertKeyMatchesCertificate, assertSignedByCertificate, signRpkSet, verifyRpkSignature } = require('../lib/rpk-signing');
 const { parseArgs } = require('../scripts/sign-rpk');
 const { packageRpk } = require('../scripts/package-rpk');
 
@@ -76,4 +76,9 @@ test('signs configured inner packages and embeds the test certificate', async ()
   assert.equal(result.buffer.includes(pemToDer(certA)), true);
   assert.match(result.certificateFingerprint, /^([A-F0-9]{2}:){31}[A-F0-9]{2}$/);
   assert.doesNotThrow(() => assertSignedByCertificate(result.buffer, fs.readFileSync(certA)));
+  assert.equal(verifyRpkSignature(result.buffer, new (require('node:crypto').X509Certificate)(fs.readFileSync(certA)).publicKey), true);
+  const tampered = Buffer.from(result.buffer);
+  const eocd = tampered.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  tampered[tampered.readUInt32LE(eocd + 16) + 20] ^= 1;
+  assert.throws(() => assertSignedByCertificate(tampered, fs.readFileSync(certA)), /signature does not verify/);
 });
