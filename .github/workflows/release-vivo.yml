@@ -83,7 +83,7 @@ jobs:
       - name: Cache Cocos Creator
         uses: actions/cache@v4
         with:
-          path: ${{ env.COCOS_CACHE_DIR }}
+          path: ${{ runner.tool_cache }}/cocos-creator/3.6.2
           key: ${{ runner.os }}-cocos-3.6.2
 
       - name: Install Vivo release dependencies

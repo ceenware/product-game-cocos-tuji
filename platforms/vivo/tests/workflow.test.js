@@ -60,6 +60,7 @@ test('vivo workflow has one selected build runner and no Linux Cocos build', () 
   assert.match(buildSection, /platforms\/vivo\/scripts\/build\.js/);
   assert.match(buildSection, /--signing-mode test/);
   assert.match(buildSection, /actions\/cache@v4/);
+  assert.match(buildSection, /^          path: \$\{\{ runner\.tool_cache \}\}\/cocos-creator\/3\.6\.2$/m);
   assert.match(buildSection, /actions\/upload-artifact@v4/);
   assert.match(buildSection, /path: artifacts\/vivo/);
   assert.match(buildSection, /name: vivo-validation-\$\{\{ runner\.os \}\}-\$\{\{ github\.sha \}\}/);
