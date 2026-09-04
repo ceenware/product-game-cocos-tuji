@@ -1,0 +1,30 @@
+{
+  "platform": "vivo",
+  "branch": "vivo",
+  "tagPrefix": "vivo-v",
+  "packageName": "com.yongzhe.huoxiantuwei.vivominigame",
+  "displayName": "勇者火线突围",
+  "versionBaseline": { "name": "1.0.10", "code": 11 },
+  "minPlatformVersion": 1206,
+  "subpackages": ["AudioAssets", "Effect", "Game", "LevelData", "Roles", "UI"],
+  "limits": { "mainBytes": 4194304, "totalBytes": 20971520 },
+  "cocos": {
+    "version": "3.6.2",
+    "windowsUrl": "https://download.cocos.com/CocosCreator/v3.6.2/CocosCreator-v3.6.2-win-102813.zip",
+    "macosUrl": "https://download.cocos.com/CocosCreator/v3.6.2/CocosCreator-v3.6.2-mac-102813.zip"
+  },
+  "toolchain": {
+    "node": "18.20.8",
+    "python": "3.11",
+    "openssl": "3.x",
+    "quickgameCli": "0.2.5",
+    "jszip": "3.10.1"
+  },
+  "runners": {
+    "auto": ["windows-2022"],
+    "windows": ["windows-2022"],
+    "macos": ["macos-15-intel"],
+    "self-hosted-windows": ["self-hosted", "Windows", "X64", "cocos-vivo"],
+    "self-hosted-macos": ["self-hosted", "macOS", "X64", "cocos-vivo"]
+  }
+}

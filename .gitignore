@@ -41,3 +41,8 @@ profiles/
 
 # isolated implementation worktrees
 .worktrees/
+
+# Platform release automation output
+artifacts/vivo/
+platforms/vivo/.cache/
+platforms/vivo/.tmp/
