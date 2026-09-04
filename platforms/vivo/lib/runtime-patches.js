@@ -388,8 +388,8 @@ const FORCE_VIVO_PLATFORM_COMPRESSED = 'function forceVivoPlatform(e){var r=e&&e
 function patchMainSource(source, importMap, file = 'main.js') {
   const label = file || 'main.js';
   source = addStartupRuntimeRequires(source, label);
-  source = installCanvasBridge(source, label);
   source = addScreenCompatibility(source, label);
+  source = installCanvasBridge(source, label);
   source = patchCanvasSizing(source);
   source = installStartupDiagnostics(source, label);
   source = addCanvasBridgeHelpers(source);
@@ -457,9 +457,12 @@ function patchUniSdkSource(source, file = 'uniSdk') {
   if (source.includes(newSnippet)) {
     return source;
   }
-  const guardedProviderPattern = /[A-Za-z_$][\w$]*\.qg\.getProvider&&-1<[A-Za-z_$][\w$]*\.qg\.getProvider\(\)\.toLowerCase\(\)\.indexOf\(["']xiaomi["']\)/;
+  const guardedProviderPattern = /([A-Za-z_$][\w$]*)\.qg\.getProvider&&-1<\1\.qg\.getProvider\(\)\.toLowerCase\(\)\.indexOf\(["']xiaomi["']\)/;
   if (guardedProviderPattern.test(source)) {
     return source;
+  }
+  if (source.includes('getProvider')) {
+    throw new Error(`${file}: missing uniSdk Xiaomi platform predicate`);
   }
 
   const compressedPattern = /(2==([A-Za-z_$][\w$]*)\.Global\.engineType\?"XIAOMI_QUICK_GAME"==([A-Za-z_$][\w$]*)\.cc\.sys\.platform:)void 0!==\3\.qg/g;
@@ -469,9 +472,6 @@ function patchUniSdkSource(source, file = 'uniSdk') {
   );
   if (compressedNext !== source) {
     return compressedNext;
-  }
-  if (source.includes('getProvider().toLowerCase().indexOf("xiaomi")')) {
-    return source;
   }
   throw new Error(`${file}: missing uniSdk Xiaomi platform predicate`);
 }

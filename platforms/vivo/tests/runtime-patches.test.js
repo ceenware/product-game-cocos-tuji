@@ -140,6 +140,14 @@ test('accepts an already-guarded compact uniSdk predicate with a local receiver'
   assert.equal(patchUniSdkSource(source, 'uniSdk.min.js'), source);
 });
 
+test('rejects a uniSdk provider predicate with different guard and call receivers', () => {
+  const source = '2==i.Global.engineType?"XIAOMI_QUICK_GAME"==e.cc.sys.platform:void 0!==e.qg&&e.qg.getProvider&&-1<window.qg.getProvider().toLowerCase().indexOf("xiaomi")';
+  assert.throws(
+    () => patchUniSdkSource(source, 'uniSdk.min.js'),
+    /missing uniSdk Xiaomi platform predicate/,
+  );
+});
+
 test('patches manifest metadata and preserves configured subpackage order', () => {
   const config = {
     packageName: 'com.example.release',
@@ -185,6 +193,15 @@ test('patches main startup behavior and is idempotent', () => {
   assert.match(patched, /var importMap=\{"imports":\{"cc":"cc\.js"\}\};/);
   assert.doesNotMatch(patched, /require\(['"]\.\/src\/import-map\.js['"]\)/);
   assert.equal(patchMainSource(patched, { imports: { cc: 'cc.js' } }, 'main.js'), patched);
+});
+
+test('installs the canvas bridge before the first runtime-canvas sizing call', () => {
+  const patched = patchMainSource(mainSource(), { imports: { cc: 'cc.js' } }, 'main.js');
+  const bridgeIndex = patched.indexOf('installVivoCanvasBridge();');
+  const sizingIndex = patched.indexOf('const startupCanvasForSizing = getRuntimeCanvas();');
+  assert.ok(bridgeIndex >= 0);
+  assert.ok(sizingIndex >= 0);
+  assert.ok(bridgeIndex < sizingIndex);
 });
 
 test('keeps compact main startup source syntactically valid', () => {
