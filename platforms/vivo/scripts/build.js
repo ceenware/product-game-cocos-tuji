@@ -9,6 +9,7 @@ const { patchCocosBuild } = require('../lib/cocos-build-patch');
 const { patchRuntimeProject } = require('../lib/runtime-patches');
 const { patchMinPlatform } = require('./patch-min-platform');
 const { buildCocosArguments } = require('../lib/cocos-toolchain');
+const { assembleArtifacts } = require('../lib/artifacts');
 const { packageRpk } = require('./package-rpk');
 
 function parseArgs(argv) {
@@ -40,8 +41,16 @@ function cleanupTemporarySigningDirectory(directory) {
   if (directory) fs.rmSync(directory, { recursive: true, force: true });
 }
 
-function runPythonVerifier(script, target, configPath, versionPath, { platform = process.platform, env = process.env, spawn = spawnSync } = {}) {
+function runPythonVerifier(script, target, configPath, versionPath, {
+  platform = process.platform,
+  env = process.env,
+  spawn = spawnSync,
+  reportJson,
+  reportText,
+} = {}) {
   const args = [script, target, '--config', configPath, '--version-file', versionPath];
+  if (reportJson) args.push('--report-json', reportJson);
+  if (reportText) args.push('--report-text', reportText);
   for (const executable of pythonCandidates({ platform, env })) {
     const result = spawn(executable, args, { stdio: 'inherit' });
     if (!result.error) {
@@ -51,6 +60,14 @@ function runPythonVerifier(script, target, configPath, versionPath, { platform =
     if (result.error.code !== 'ENOENT') throw result.error;
   }
   throw new Error('Python interpreter not found');
+}
+
+function revalidateArtifactChecksum(rpkPath, checksumPath) {
+  const digest = crypto.createHash('sha256').update(fs.readFileSync(rpkPath)).digest('hex');
+  const expected = `${digest}  ${path.basename(rpkPath)}\n`;
+  const actual = fs.readFileSync(checksumPath, 'utf8');
+  if (actual !== expected) throw new Error(`SHA256SUMS checksum does not match copied RPK: ${path.basename(rpkPath)}`);
+  return true;
 }
 
 async function build(options) {
@@ -74,17 +91,38 @@ async function build(options) {
   patchRuntimeProject({ projectDir, adapterRoot: args['adapter-root'], config, version });
   patchMinPlatform({ quickgameRoot: path.join(__dirname, '..', 'node_modules', 'quickgame-cli'), minPlatformVersion: config.minPlatformVersion });
   let signing = { privateKey: args['private-key'], certificate: args.certificate };
-  const outputRpk = path.join(args.artifacts, `${config.packageName}-unsigned.rpk`);
-  fs.mkdirSync(args.artifacts, { recursive: true });
+  const outputRpk = path.join(args.workspace, `${config.packageName}.rpk`);
   let temporarySigningDir;
   try {
     if (signingMode === 'test') {
       temporarySigningDir = path.join(args.workspace, 'sign');
       signing = generateTestCertificate(args.openssl, temporarySigningDir);
     }
-    const result = await packageRpk({ projectDir, config, privateKeyPath: signing.privateKey, certificatePath: signing.certificate, outputPath: outputRpk });
-    runPythonVerifier(path.join(__dirname, 'verify-release-rpk.py'), outputRpk, configPath, args['version-file']);
-    return { outputRpk, signingMode, version, result };
+    const signingResult = await packageRpk({ projectDir, config, privateKeyPath: signing.privateKey, certificatePath: signing.certificate, outputPath: outputRpk });
+    const reportJson = path.join(args.workspace, 'validation-report.json');
+    const reportText = path.join(args.workspace, 'validation-report.txt');
+    runPythonVerifier(path.join(__dirname, 'verify-release-rpk.py'), outputRpk, configPath, args['version-file'], { reportJson, reportText });
+    const checks = JSON.parse(fs.readFileSync(reportJson, 'utf8'));
+    const artifactResult = assembleArtifacts({
+      inputRpk: outputRpk,
+      outputDir: args.artifacts,
+      config,
+      version,
+      metadata: {
+        sourceSha: args['source-sha'] || process.env.GITHUB_SHA,
+        trigger: args.trigger || process.env.GITHUB_EVENT_NAME,
+        runnerOS: args['runner-os'] || process.env.RUNNER_OS,
+        runnerArch: args['runner-arch'] || process.env.RUNNER_ARCH,
+        nodeVersion: args['node-version'] || process.env.NODE_VERSION || process.version,
+        pythonVersion: args['python-version'] || process.env.PYTHON_VERSION || config.toolchain?.python,
+        signingMode,
+        certificateFingerprint: signingResult.certificateFingerprint,
+      },
+      checks,
+    });
+    if (artifactResult.files.length !== 5) throw new Error('vivo release artifact assembly must return exactly five files');
+    revalidateArtifactChecksum(artifactResult.rpkPath, path.join(args.artifacts, 'SHA256SUMS'));
+    return { outputRpk: artifactResult.rpkPath, artifacts: artifactResult.files, signingMode, version, result: signingResult };
   } finally {
     cleanupTemporarySigningDirectory(temporarySigningDir);
   }
@@ -101,4 +139,4 @@ if (require.main === module) main().catch((error) => {
   process.exitCode = 1;
 });
 
-module.exports = { build, cleanupTemporarySigningDirectory, generateTestCertificate, parseArgs, pythonCandidates, runPythonVerifier };
+module.exports = { build, cleanupTemporarySigningDirectory, generateTestCertificate, parseArgs, pythonCandidates, revalidateArtifactChecksum, runPythonVerifier };
