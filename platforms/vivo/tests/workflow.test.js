@@ -23,6 +23,7 @@ test('vivo workflow has one selected build runner and no Linux Cocos build', () 
   const yaml = fs.readFileSync(path.join(__dirname, '..', '..', '..', '.github', 'workflows', 'release-vivo.yml'), 'utf8');
   const topLevelKeys = (yaml.match(/^(?:name|on|permissions|concurrency|jobs):(?:\s.*)?$/gm) || [])
     .map((line) => line.split(':', 1)[0]);
+  const onSection = section(yaml, 'on', 0).trimEnd();
   const jobsSection = section(yaml, 'jobs', 0);
   const jobs = jobsSection.match(/^  [A-Za-z_][A-Za-z0-9_-]*:\s*$/gm) || [];
   const dispatchSection = section(yaml, 'workflow_dispatch', 2);
@@ -31,7 +32,16 @@ test('vivo workflow has one selected build runner and no Linux Cocos build', () 
 
   assert.deepEqual(topLevelKeys, ['name', 'on', 'permissions', 'concurrency', 'jobs']);
   assert.match(yaml, /^name: Release Vivo$/m);
-  assert.match(yaml, /^on:\n  workflow_dispatch:$/m);
+  assert.equal(onSection, [
+    'on:',
+    '  workflow_dispatch:',
+    '    inputs:',
+    '      runner:',
+    '        description: Build runner',
+    '        type: choice',
+    '        default: auto',
+    '        options: [auto, windows, macos, self-hosted-windows, self-hosted-macos]',
+  ].join('\n'));
   assert.match(dispatchSection, /^    inputs:$/m);
   assert.match(dispatchSection, /^      runner:$/m);
   assert.match(dispatchSection, /^        type: choice$/m);
@@ -64,6 +74,7 @@ test('vivo workflow has one selected build runner and no Linux Cocos build', () 
   assert.match(buildSection, /actions\/upload-artifact@v4/);
   assert.match(buildSection, /path: artifacts\/vivo/);
   assert.match(buildSection, /name: vivo-validation-\$\{\{ runner\.os \}\}-\$\{\{ github\.sha \}\}/);
+  assert.match(buildSection, /- name: Verify Bash on Windows[\s\S]*?^        if: runner\.os == 'Windows'$\n        shell: pwsh[\s\S]*?Get-Command bash/m);
   const requiredSteps = [
     'npm ci --ignore-scripts --prefix platforms/vivo',
     'npm test --prefix platforms/vivo',
