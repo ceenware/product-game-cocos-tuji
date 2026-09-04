@@ -1,0 +1,134 @@
+name: Release Vivo
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Build runner
+        type: choice
+        default: auto
+        options: [auto, windows, macos, self-hosted-windows, self-hosted-macos]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-vivo
+  cancel-in-progress: false
+
+jobs:
+  select-runner:
+    runs-on: ubuntu-latest
+    outputs:
+      runner: ${{ steps.select.outputs.runner }}
+    steps:
+      - name: Checkout runner configuration
+        uses: actions/checkout@v4
+
+      - name: Select build runner
+        id: select
+        env:
+          REQUESTED_RUNNER: ${{ inputs.runner }}
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const config = JSON.parse(fs.readFileSync('platforms/vivo/release.json', 'utf8'));
+          const requestedRunner = process.env.REQUESTED_RUNNER || 'auto';
+          if (!Object.prototype.hasOwnProperty.call(config.runners || {}, requestedRunner)) {
+            throw new Error(`unsupported runner selection: ${requestedRunner}`);
+          }
+
+          const runner = config.runners[requestedRunner];
+          if (!Array.isArray(runner) || runner.length === 0) {
+            throw new Error(`runner selection is not a non-empty array: ${requestedRunner}`);
+          }
+
+          const hostedRunner = runner.length === 1 && new Set(['windows-2022', 'macos-15-intel']).has(runner[0]);
+          const selfHostedRunner = runner.length === 4
+            && runner[0] === 'self-hosted'
+            && new Set(['Windows', 'macOS']).has(runner[1])
+            && runner[2] === 'X64'
+            && runner[3] === 'cocos-vivo';
+          if (!hostedRunner && !selfHostedRunner) {
+            throw new Error(`unsupported runner labels for ${requestedRunner}: ${JSON.stringify(runner)}`);
+          }
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `runner=${JSON.stringify(runner)}\n`);
+          NODE
+
+  build:
+    needs: select-runner
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    env:
+      COCOS_CACHE_DIR: ${{ runner.tool_cache }}/cocos-creator/3.6.2
+    steps:
+      - name: Checkout source and tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18.20.8
+          cache: npm
+          cache-dependency-path: platforms/vivo/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache Cocos Creator
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.COCOS_CACHE_DIR }}
+          key: ${{ runner.os }}-cocos-3.6.2
+
+      - name: Install Vivo release dependencies
+        shell: bash
+        run: npm ci --ignore-scripts --prefix platforms/vivo
+
+      - name: Run Vivo tests
+        shell: bash
+        run: npm test --prefix platforms/vivo
+
+      - name: Resolve Vivo version
+        id: version
+        shell: bash
+        run: |
+          version_file="$GITHUB_WORKSPACE/platforms/vivo/.tmp/version.json"
+          node platforms/vivo/scripts/resolve-version.js \
+            --repo "$GITHUB_WORKSPACE" \
+            --config "$GITHUB_WORKSPACE/platforms/vivo/release.json" \
+            --output "$version_file"
+          printf 'versionFile=%s\n' "$version_file" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure Cocos Creator and OpenSSL
+        id: cocos
+        shell: bash
+        run: node platforms/vivo/scripts/ensure-cocos.js --config "$GITHUB_WORKSPACE/platforms/vivo/release.json" --tool-cache "$COCOS_CACHE_DIR"
+
+      - name: Build Vivo validation package
+        shell: bash
+        run: |
+          node platforms/vivo/scripts/build.js \
+            --project-root "$GITHUB_WORKSPACE" \
+            --workspace "$RUNNER_TEMP/vivo-build" \
+            --cocos "${{ steps.cocos.outputs.executable }}" \
+            --adapter-root "${{ steps.cocos.outputs.adapter_root }}" \
+            --openssl "${{ steps.cocos.outputs.openssl }}" \
+            --config "$GITHUB_WORKSPACE/platforms/vivo/release.json" \
+            --version-file "${{ steps.version.outputs.versionFile }}" \
+            --artifacts "$GITHUB_WORKSPACE/artifacts/vivo" \
+            --signing-mode test
+
+      - name: Upload Vivo validation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vivo-validation-${{ runner.os }}-${{ github.sha }}
+          path: artifacts/vivo
+          if-no-files-found: error
