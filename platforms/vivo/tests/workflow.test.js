@@ -50,6 +50,10 @@ test('vivo workflow has one selected build runner and no Linux Cocos build', () 
   assert.doesNotMatch(yaml, /^\s*push:/m);
   assert.deepEqual(jobs, ['  select-runner:', '  build:']);
   assert.match(selectRunnerSection, /^    runs-on: ubuntu-latest$/m);
+  assert.match(selectRunnerSection, /process\.env\.GITHUB_REF_NAME/);
+  assert.match(selectRunnerSection, /config\.branch/);
+  assert.match(selectRunnerSection, /JSON\.stringify\(runner\)/);
+  assert.doesNotMatch(selectRunnerSection, /ensure-cocos|build\.js|COCOS_/i);
   assert.match(yaml, /windows-2022/);
   assert.match(yaml, /macos-15-intel/);
   assert.match(yaml, /self-hosted-windows/);
@@ -71,6 +75,7 @@ test('vivo workflow has one selected build runner and no Linux Cocos build', () 
   assert.match(buildSection, /--signing-mode test/);
   assert.match(buildSection, /actions\/cache@v4/);
   assert.match(buildSection, /^          path: \$\{\{ runner\.tool_cache \}\}\/cocos-creator\/3\.6\.2$/m);
+  assert.match(buildSection, /^          key: \$\{\{ runner\.os \}\}-cocos-3\.6\.2$/m);
   assert.match(buildSection, /actions\/upload-artifact@v4/);
   assert.match(buildSection, /path: artifacts\/vivo/);
   assert.match(buildSection, /name: vivo-validation-\$\{\{ runner\.os \}\}-\$\{\{ github\.sha \}\}/);

@@ -35,6 +35,11 @@ jobs:
           const fs = require('node:fs');
 
           const config = JSON.parse(fs.readFileSync('platforms/vivo/release.json', 'utf8'));
+          const actualBranch = process.env.GITHUB_REF_NAME;
+          if (actualBranch !== config.branch) {
+            throw new Error(`workflow must run on ${config.branch} branch, got ${actualBranch || 'unknown'}`);
+          }
+
           const requestedRunner = process.env.REQUESTED_RUNNER || 'auto';
           if (!Object.prototype.hasOwnProperty.call(config.runners || {}, requestedRunner)) {
             throw new Error(`unsupported runner selection: ${requestedRunner}`);
