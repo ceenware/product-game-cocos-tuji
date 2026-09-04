@@ -136,6 +136,18 @@ function expectedArchiveNames(config) {
   return ['main.rpk', ...config.subpackages.map((name) => `usr_${name}.rpk`)];
 }
 
+function findFullPackagePath(distTempDir, config) {
+  const candidates = [
+    `${config.packageName}.rpk`,
+    `${config.packageName}.release.rpk`,
+  ];
+  const fullPackageName = candidates.find((name) => fs.existsSync(path.join(distTempDir, name)));
+  if (!fullPackageName) {
+    throw new Error(`missing compiled full package in ${distTempDir}: ${candidates.join(' or ')}`);
+  }
+  return path.join(distTempDir, fullPackageName);
+}
+
 async function readEntries(filePath) {
   const zip = await JSZip.loadAsync(fs.readFileSync(filePath));
   const entries = [];
@@ -197,7 +209,7 @@ async function signRpkSet({ distTempDir, config, privateKeyPath, certificatePath
     signedInner.set(name, await signPackage(await readEntries(path.join(distTempDir, name)), privateKey, certificate));
   }
 
-  const fullPackagePath = path.join(distTempDir, packageName);
+  const fullPackagePath = findFullPackagePath(distTempDir, config);
   const signedFull = await signPackage(await readEntries(fullPackagePath), privateKey, certificate);
   const outerZip = new JSZip();
   for (const name of innerNames) outerZip.file(name, signedInner.get(name));
@@ -221,6 +233,7 @@ module.exports = {
   assertKeyMatchesCertificate,
   assertSignedByCertificate,
   expectedArchiveNames,
+  findFullPackagePath,
   signRpkSet,
   verifyRpkSignature,
 };

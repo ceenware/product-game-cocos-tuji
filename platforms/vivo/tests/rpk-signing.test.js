@@ -38,7 +38,7 @@ test.before(async () => {
   generatePair(keyA, certA, 'vivo-release-test-a');
   generatePair(keyB, certB, 'vivo-release-test-b');
   fs.mkdirSync(distTempDir, { recursive: true });
-  const names = ['main.rpk', 'usr_AudioAssets.rpk', 'usr_Game.rpk', `${config.packageName}.rpk`];
+  const names = ['main.rpk', 'usr_AudioAssets.rpk', 'usr_Game.rpk', `${config.packageName}.release.rpk`];
   for (const name of names) {
     const data = await makeZip({ 'manifest.json': '{}', 'payload.js': `content-${name}` });
     fs.writeFileSync(path.join(distTempDir, name), data);

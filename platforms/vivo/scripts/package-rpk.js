@@ -2,13 +2,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const compile = require('quickgame-cli/lib/commands/compile');
-const { signRpkSet, expectedArchiveNames } = require('../lib/rpk-signing');
+const { signRpkSet, expectedArchiveNames, findFullPackagePath } = require('../lib/rpk-signing');
 
 function ensureArchives(distTempDir, config) {
-  for (const name of [...expectedArchiveNames(config), `${config.packageName}.rpk`]) {
+  for (const name of expectedArchiveNames(config)) {
     const filePath = path.join(distTempDir, name);
     if (!fs.existsSync(filePath)) throw new Error(`missing compiled archive: ${filePath}`);
   }
+  return findFullPackagePath(distTempDir, config);
 }
 
 async function packageRpk({ projectDir, config, privateKeyPath, certificatePath, outputPath, compileFn = compile }) {
@@ -23,7 +24,12 @@ async function packageRpk({ projectDir, config, privateKeyPath, certificatePath,
   const outputDirectories = [path.join(projectDir, 'dist_temp'), path.join(projectDir, 'dist')];
   const distTempDir = outputDirectories.find((directory) => {
     if (!fs.existsSync(directory)) return false;
-    return [...expectedArchiveNames(config), `${config.packageName}.rpk`].every((name) => fs.existsSync(path.join(directory, name)));
+    try {
+      ensureArchives(directory, config);
+      return true;
+    } catch {
+      return false;
+    }
   });
   if (!distTempDir) {
     throw new Error(`compiled output must contain configured archives in ${outputDirectories.join(' or ')}`);
