@@ -25,6 +25,7 @@ async function main() {
     explicitPath: process.env.COCOS_CREATOR,
     expectedVersion: config.cocos.version,
     toolCache: args['tool-cache'],
+    cocosConfig: config.cocos,
   });
   const openssl = await ensureOpenSsl({ runnerOS: process.env.RUNNER_OS });
   const result = { ...cocos, openssl: openssl.executable };

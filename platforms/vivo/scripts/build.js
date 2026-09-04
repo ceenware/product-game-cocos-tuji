@@ -32,11 +32,25 @@ function generateTestCertificate(openssl, directory) {
   return { privateKey, certificate };
 }
 
-function runPythonVerifier(script, target, configPath, versionPath) {
-  const result = spawnSync(process.env.PYTHON || 'python3', [script, target, '--config', configPath, '--version-file', versionPath], { stdio: 'inherit' });
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`verification failed: ${path.basename(script)}`);
-  return result;
+function pythonCandidates({ platform = process.platform, env = process.env } = {}) {
+  return [...new Set([env.PYTHON, platform === 'win32' ? 'python' : 'python3', 'python'].filter(Boolean))];
+}
+
+function cleanupTemporarySigningDirectory(directory) {
+  if (directory) fs.rmSync(directory, { recursive: true, force: true });
+}
+
+function runPythonVerifier(script, target, configPath, versionPath, { platform = process.platform, env = process.env, spawn = spawnSync } = {}) {
+  const args = [script, target, '--config', configPath, '--version-file', versionPath];
+  for (const executable of pythonCandidates({ platform, env })) {
+    const result = spawn(executable, args, { stdio: 'inherit' });
+    if (!result.error) {
+      if (result.status !== 0) throw new Error(`verification failed: ${path.basename(script)}`);
+      return result;
+    }
+    if (result.error.code !== 'ENOENT') throw result.error;
+  }
+  throw new Error('Python interpreter not found');
 }
 
 async function build(options) {
@@ -60,12 +74,20 @@ async function build(options) {
   patchRuntimeProject({ projectDir, adapterRoot: args['adapter-root'], config, version });
   patchMinPlatform({ quickgameRoot: path.join(__dirname, '..', 'node_modules', 'quickgame-cli'), minPlatformVersion: config.minPlatformVersion });
   let signing = { privateKey: args['private-key'], certificate: args.certificate };
-  if (signingMode === 'test') signing = generateTestCertificate(args.openssl, path.join(args.workspace, 'sign'));
   const outputRpk = path.join(args.artifacts, `${config.packageName}-unsigned.rpk`);
   fs.mkdirSync(args.artifacts, { recursive: true });
-  const result = await packageRpk({ projectDir, config, privateKeyPath: signing.privateKey, certificatePath: signing.certificate, outputPath: outputRpk });
-  runPythonVerifier(path.join(__dirname, 'verify-release-rpk.py'), outputRpk, configPath, args['version-file']);
-  return { outputRpk, signingMode, version, result };
+  let temporarySigningDir;
+  try {
+    if (signingMode === 'test') {
+      temporarySigningDir = path.join(args.workspace, 'sign');
+      signing = generateTestCertificate(args.openssl, temporarySigningDir);
+    }
+    const result = await packageRpk({ projectDir, config, privateKeyPath: signing.privateKey, certificatePath: signing.certificate, outputPath: outputRpk });
+    runPythonVerifier(path.join(__dirname, 'verify-release-rpk.py'), outputRpk, configPath, args['version-file']);
+    return { outputRpk, signingMode, version, result };
+  } finally {
+    cleanupTemporarySigningDirectory(temporarySigningDir);
+  }
 }
 
 async function main() {
@@ -79,4 +101,4 @@ if (require.main === module) main().catch((error) => {
   process.exitCode = 1;
 });
 
-module.exports = { build, generateTestCertificate, parseArgs, runPythonVerifier };
+module.exports = { build, cleanupTemporarySigningDirectory, generateTestCertificate, parseArgs, pythonCandidates, runPythonVerifier };
