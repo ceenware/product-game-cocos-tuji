@@ -487,9 +487,23 @@ function patchUniSdkSource(source, file = 'uniSdk') {
   }
 
   source = source.replace(
-    /void 0!==window\.qg&&-1<window\.qg\.getProvider\(\)\.toLowerCase\(\)\.indexOf\((["'])(xiaomi|vivo|oppo)\1\)/g,
+    /void\s*0\s*!==\s*window\.qg\s*&&\s*-1\s*<\s*window\.qg\.getProvider\(\)\.toLowerCase\(\)\.indexOf\((["'])(xiaomi|vivo|oppo)\1\)/g,
     'void 0!==window.qg&&window.qg.getProvider&&-1<window.qg.getProvider().toLowerCase().indexOf("$2")',
   );
+
+  source = source.replace(
+    /void 0!==([A-Za-z_$][\w$]*)\.qg&&-1<\1\.qg\.getProvider\(\)\.toLowerCase\(\)\.indexOf\((["'])(xiaomi|vivo|oppo)\2\)/g,
+    'void 0!==$1.qg&&$1.qg.getProvider&&-1<$1.qg.getProvider().toLowerCase().indexOf(\"$3\")',
+  );
+
+  const compressedPattern = /(2==([A-Za-z_$][\w$]*)\.Global\.engineType\?\"XIAOMI_QUICK_GAME\"==([A-Za-z_$][\w$]*)\.cc\.sys\.platform:)void 0!==\3\.qg(?!&&\3\.qg\.getProvider&&)/g;
+  const compressedNext = source.replace(
+    compressedPattern,
+    '$1void 0!==$3.qg&&$3.qg.getProvider&&-1<$3.qg.getProvider().toLowerCase().indexOf(\"xiaomi\")',
+  );
+  if (compressedNext !== source) {
+    source = compressedNext;
+  }
 
   if (source.includes(newSnippet)) {
     return source;
@@ -500,15 +514,6 @@ function patchUniSdkSource(source, file = 'uniSdk') {
   }
   if (source.includes('getProvider')) {
     throw new Error(`${file}: missing uniSdk Xiaomi platform predicate`);
-  }
-
-  const compressedPattern = /(2==([A-Za-z_$][\w$]*)\.Global\.engineType\?"XIAOMI_QUICK_GAME"==([A-Za-z_$][\w$]*)\.cc\.sys\.platform:)void 0!==\3\.qg/g;
-  const compressedNext = source.replace(
-    compressedPattern,
-    '$1void 0!==$3.qg&&$3.qg.getProvider&&-1<$3.qg.getProvider().toLowerCase().indexOf("xiaomi")',
-  );
-  if (compressedNext !== source) {
-    return compressedNext;
   }
   throw new Error(`${file}: missing uniSdk Xiaomi platform predicate`);
 }

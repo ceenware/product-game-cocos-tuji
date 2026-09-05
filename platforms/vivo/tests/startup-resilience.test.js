@@ -58,3 +58,23 @@ test('vivo SDK platform checks tolerate runtimes without getProvider', () => {
   assert.match(sdkSystemSource, /private static getProviderName\(platform: any\)/);
   assert.doesNotMatch(sdkSystemSource, /window\['qg'\]\.getProvider\(\)\.toLowerCase\(\)/);
 });
+
+test('vivo SDK platform checks guard aliased qg providers in compressed exports', () => {
+  const patched = patchUniSdkSource([
+    '2==i.Global.engineType?"XIAOMI_QUICK_GAME"==e.cc.sys.platform:void 0!==e.qg',
+    'void 0!==e.qg&&-1<e.qg.getProvider().toLowerCase().indexOf("vivo")',
+    'void 0!==e.qg&&-1<e.qg.getProvider().toLowerCase().indexOf("oppo")',
+  ].join('\n'));
+  assert.match(patched, /e\.qg\.getProvider&&-1<e\.qg\.getProvider\(\)\.toLowerCase\(\)\.indexOf\("vivo"\)/);
+  assert.match(patched, /e\.qg\.getProvider&&-1<e\.qg\.getProvider\(\)\.toLowerCase\(\)\.indexOf\("oppo"\)/);
+});
+
+test('vivo SDK platform checks guard spaced window qg providers in Cocos exports', () => {
+  const patched = patchUniSdkSource([
+    '2 == i.Global.engineType ? "XIAOMI_QUICK_GAME" == window.cc.sys.platform : void 0 !== window.qg;',
+    'void 0 !== window.qg && -1 < window.qg.getProvider().toLowerCase().indexOf("vivo")',
+    'void 0 !== window.qg && -1 < window.qg.getProvider().toLowerCase().indexOf("oppo")',
+  ].join('\n'));
+  assert.match(patched, /window\.qg\.getProvider&&-1<window\.qg\.getProvider\(\)\.toLowerCase\(\)\.indexOf\("vivo"\)/);
+  assert.match(patched, /window\.qg\.getProvider&&-1<window\.qg\.getProvider\(\)\.toLowerCase\(\)\.indexOf\("oppo"\)/);
+});
