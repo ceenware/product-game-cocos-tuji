@@ -210,7 +210,10 @@ async function signRpkSet({ distTempDir, config, privateKeyPath, certificatePath
   }
 
   const fullPackagePath = findFullPackagePath(distTempDir, config);
-  const signedFull = await signPackage(await readEntries(fullPackagePath), privateKey, certificate);
+  const fullEntries = await readEntries(fullPackagePath);
+  const manifestEntry = fullEntries.find((entry) => entry.name === 'manifest.json');
+  if (!manifestEntry) throw new Error(`compiled full package is missing manifest.json: ${fullPackagePath}`);
+  const signedFull = await signPackage([manifestEntry], privateKey, certificate);
   const outerZip = new JSZip();
   for (const name of innerNames) outerZip.file(name, signedInner.get(name));
   outerZip.file(packageName, signedFull);

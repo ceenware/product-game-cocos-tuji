@@ -48,8 +48,17 @@ function cocosEngineSource() {
   return '"CC_XIAOMI",!0;"CC_VIVO",!1;x=P.XIAOMI_QUICK_GAME;var a={};b=qg,Object.keys(b).forEach;require("../../"+("src/"+t))';
 }
 
+function modernCocosEngineSource() {
+  return [
+    "tryDefineGlobal('CC_XIAOMI', false);",
+    "tryDefineGlobal('CC_VIVO', true);",
+    'currentPlatform = Platform.VIVO_MINI_GAME;',
+    'function loadJsFile(path) { return require("" + path); }',
+  ].join('\n');
+}
+
 function uniSdkSource() {
-  return '2 == i.Global.engineType ? "XIAOMI_QUICK_GAME" == window.cc.sys.platform : void 0 !== window.qg;';
+  return '2 == i.Global.engineType ? "XIAOMI_QUICK_GAME" == window.cc.sys.platform : void 0 !== window.qg; e.setOwnerNameLabel=function(t){t.string="游戏著作权人: __COPY_RIGHT_TEXT_"};';
 }
 
 function makeQuickgameFixture({ version = '0.2.5', source = 't=(e.quickGameCliVersion=getCliVersion(),1308)' } = {}) {
@@ -66,6 +75,10 @@ function makeProjectFixture({ withBuild = true } = {}) {
   const config = {
     packageName: 'com.example.vivo',
     minPlatformVersion: 1206,
+    copyright: {
+      owner: '巴中宜辰网络科技有限公司',
+      softwareRegistration: '软著认000494301号',
+    },
     subpackages: ['Game', 'AudioAssets'],
   };
   const version = { versionName: '1.0.11', versionCode: 12 };
@@ -103,6 +116,44 @@ function makeProjectFixture({ withBuild = true } = {}) {
   return { projectDir, adapterRoot, config, version };
 }
 
+function makeNormalizedProjectFixture() {
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vivo-normalized-project-'));
+  const adapterRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vivo-normalized-adapter-'));
+  const config = {
+    packageName: 'com.example.vivo',
+    minPlatformVersion: 1206,
+    copyright: {
+      owner: '巴中宜辰网络科技有限公司',
+      softwareRegistration: '软著认000494301号',
+    },
+    subpackages: ['Game'],
+  };
+  const version = { versionName: '1.0.11', versionCode: 12 };
+  fs.mkdirSync(path.join(projectDir, 'src', 'cocos-js'), { recursive: true });
+  fs.mkdirSync(path.join(projectDir, 'src', 'assets', 'uniSdk'), { recursive: true });
+  fs.mkdirSync(path.join(projectDir, 'subpackages', 'Game'), { recursive: true });
+  const normalizedStartup = mainSource()
+    .replace(/require\('\.\/web-adapter'\)/, "require('runtime-adapter/web-adapter.js')")
+    .replace(/require\('\.\/engine-adapter'\)/, "require('runtime-adapter/engine-adapter.js')");
+  fs.writeFileSync(path.join(projectDir, 'main.js'), 'require("game.js");\n');
+  fs.writeFileSync(path.join(projectDir, 'game.js'), "require('externs-game.js');\n");
+  fs.writeFileSync(path.join(projectDir, 'externs-game.js'), normalizedStartup);
+  fs.writeFileSync(path.join(projectDir, 'manifest.json'), '{"config":{"logLevel":"debug"}}');
+  fs.writeFileSync(path.join(projectDir, 'src', 'import-map.js'), 'module.exports = { default: { imports: { cc: "cc.js" } } };\n');
+  fs.writeFileSync(path.join(projectDir, 'src', 'settings.json'), '{}');
+  fs.writeFileSync(path.join(projectDir, 'src', 'cocos-js', 'cc.abc123.js'), cocosEngineSource());
+  fs.writeFileSync(path.join(projectDir, 'src', 'assets', 'uniSdk', 'uniSdk.min.abc123.js'), uniSdkSource());
+  fs.writeFileSync(path.join(projectDir, 'subpackages', 'Game', 'config.json'), '{}');
+  fs.writeFileSync(path.join(projectDir, 'subpackages', 'Game', 'index.js'), 'export default {};\n');
+
+  fs.mkdirSync(path.join(adapterRoot, 'runtime', 'vivo-mini-game'), { recursive: true });
+  fs.writeFileSync(path.join(adapterRoot, 'runtime', 'vivo-mini-game', 'ral.min.js'), 'ral adapter');
+  fs.writeFileSync(path.join(adapterRoot, 'runtime', 'vivo-mini-game', 'engine-adapter.min.js'), 'engine adapter');
+  fs.mkdirSync(path.join(adapterRoot, 'runtime'), { recursive: true });
+  fs.writeFileSync(path.join(adapterRoot, 'runtime', 'web-adapter.min.js'), 'web adapter');
+  return { projectDir, adapterRoot, config, version };
+}
+
 test('normalizes adapter requires and is idempotent', () => {
   const once = normalizeStartupRequirePaths("require('./ral.min');require('./web-adapter');require('./engine-adapter')");
   assert.equal(once, 'require("./ral.min.js");require("./web-adapter.js");require("./engine-adapter.js")');
@@ -116,6 +167,15 @@ test('switches compiled engine from Xiaomi to vivo and fixes traversal loader', 
   assert.match(patched, /P\.VIVO_MINI_GAME/);
   assert.match(patched, /require\("src\/"\+t\)/);
   assert.equal(patchCocosEngineSource(patched, 'cc.hash.js'), patched);
+});
+
+test('accepts the unminified Cocos 3.6 vivo engine loader', () => {
+  const patched = patchCocosEngineSource(modernCocosEngineSource(), 'cc.js');
+  assert.match(patched, /CC_XIAOMI', false/);
+  assert.match(patched, /CC_VIVO', true/);
+  assert.match(patched, /Platform\.VIVO_MINI_GAME/);
+  assert.match(patched, /require\("" \+ path\)/);
+  assert.equal(patchCocosEngineSource(patched, 'cc.js'), patched);
 });
 
 test('creates configured usr subpackages with main.js entries', () => {
@@ -259,6 +319,23 @@ test('patches only the temporary project and its existing build mirror', () => {
     }
 
     assert.deepEqual(fs.readFileSync(path.join(fixture.adapterRoot, 'runtime', 'vivo-mini-game', 'ral.min.js')), adapterBefore);
+  } finally {
+    fs.rmSync(fixture.projectDir, { recursive: true, force: true });
+    fs.rmSync(fixture.adapterRoot, { recursive: true, force: true });
+  }
+});
+
+test('patches the normalized Cocos export layout used by quickgame-cli', () => {
+  const fixture = makeNormalizedProjectFixture();
+  try {
+    patchRuntimeProject(fixture);
+    assert.equal(fs.readFileSync(path.join(fixture.projectDir, 'runtime-adapter', 'ral.js'), 'utf8'), 'ral adapter');
+    assert.equal(fs.readFileSync(path.join(fixture.projectDir, 'runtime-adapter', 'web-adapter.js'), 'utf8'), 'web adapter');
+    assert.equal(fs.readFileSync(path.join(fixture.projectDir, 'runtime-adapter', 'engine-adapter.js'), 'utf8'), 'engine adapter');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(fixture.projectDir, 'manifest.json'), 'utf8')).buildType, 'release');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(fixture.projectDir, 'src', 'settings.json'), 'utf8')).engine.debug, false);
+    assert.equal(fs.readFileSync(path.join(fixture.projectDir, 'subpackages', 'Game', 'main.js'), 'utf8'), "import './index.js';\n");
+    assert.match(fs.readFileSync(path.join(fixture.projectDir, 'externs-game.js'), 'utf8'), /runtime-adapter\/ral\.js/);
   } finally {
     fs.rmSync(fixture.projectDir, { recursive: true, force: true });
     fs.rmSync(fixture.adapterRoot, { recursive: true, force: true });

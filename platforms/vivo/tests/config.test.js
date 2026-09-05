@@ -26,3 +26,15 @@ test('rejects duplicate subpackages and invalid version baselines', () => {
     /versionBaseline.name/,
   );
 });
+
+test('requires verified copyright metadata for vivo releases', () => {
+  const valid = loadReleaseConfig(path.join(__dirname, '..', 'release.json'));
+  assert.throws(
+    () => validateReleaseConfig({ ...valid, copyright: undefined }),
+    /copyright\.owner/,
+  );
+  assert.throws(
+    () => validateReleaseConfig({ ...valid, copyright: { owner: valid.copyright.owner } }),
+    /copyright\.softwareRegistration/,
+  );
+});

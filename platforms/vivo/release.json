@@ -4,6 +4,10 @@
   "tagPrefix": "vivo-v",
   "packageName": "com.yongzhe.huoxiantuwei.vivominigame",
   "displayName": "勇者火线突围",
+  "copyright": {
+    "owner": "巴中宜辰网络科技有限公司",
+    "softwareRegistration": "软著认000494301号"
+  },
   "versionBaseline": { "name": "1.0.10", "code": 11 },
   "minPlatformVersion": 1206,
   "subpackages": ["AudioAssets", "Effect", "Game", "LevelData", "Roles", "UI"],

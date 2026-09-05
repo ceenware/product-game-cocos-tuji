@@ -1,14 +1,19 @@
 {
-  "name": "yongzhe-huoxian-tuwei-vivo-release",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "test:node": "node --test tests/*.test.js",
-    "test:python": "node scripts/run-python-tests.js",
-    "test": "npm run test:node && npm run test:python"
-  },
-  "dependencies": {
-    "jszip": "3.10.1",
-    "quickgame-cli": "0.2.5"
-  }
+	"name": "yongzhe-huoxian-tuwei-vivo-release",
+	"version": "1.0.0",
+	"private": true,
+	"scripts": {
+		"test:node": "node --test tests/*.test.js",
+		"test:python": "node scripts/run-python-tests.js",
+		"test": "npm run test:node && npm run test:python"
+	},
+	"dependencies": {
+		"jszip": "3.10.1",
+		"quickgame-cli": "0.2.5"
+	},
+	"babel": {
+		"plugins": [
+			"babel-plugin-transform-remove-strict-mode"
+		]
+	}
 }

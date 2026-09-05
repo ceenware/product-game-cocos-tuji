@@ -22,6 +22,8 @@ export enum PlatformType {
 export class SDKSystem extends BasicSystem {
     public static _curPlatform: PlatformType = PlatformType.PCMiniGame;
     private static _curSDK: SDK = null;
+    private static initTimeout: number = null;
+    private static readonly InitializationTimeoutMs = 6000;
 
     public static init(d?: any) {
         //初始化当前平台的SDK
@@ -46,14 +48,15 @@ export class SDKSystem extends BasicSystem {
 
         if (this._curSDK) return;
 
+        const qgProvider = this.getProviderName(window['qg']);
         // OPPO mini game
-        if (typeof window['qg'] !== "undefined" && window['qg'].getProvider().toLowerCase().indexOf("oppo") > -1) {
+        if (qgProvider.indexOf("oppo") > -1) {
             this._curPlatform = PlatformType.OPPOMiniGame;
             this.instanceSDK(new OPPOSDK());
             return;
         }
         // VIVO mini game
-        if (typeof window['qg'] !== "undefined" && window['qg'].getProvider().toLowerCase().indexOf("vivo") > -1) {
+        if (qgProvider.indexOf("vivo") > -1) {
             this._curPlatform = PlatformType.VIVOMiniGame;
             this.instanceSDK(new VIVOSDK());
             return;
@@ -99,6 +102,18 @@ export class SDKSystem extends BasicSystem {
         this.instanceSDK(new SDK());
     }
 
+    private static getProviderName(platform: any): string {
+        if (!platform || typeof platform.getProvider !== 'function') {
+            return '';
+        }
+        try {
+            return String(platform.getProvider() || '').toLowerCase();
+        } catch (error) {
+            console.warn('读取平台信息失败:', error);
+            return '';
+        }
+    }
+
     private static checkSystem() {
 
         // if (/android/i.test(navigator.userAgent)) {
@@ -127,14 +142,22 @@ export class SDKSystem extends BasicSystem {
      */
     private static instanceSDK(sdk: SDK) {
         this._curSDK = sdk;
-        this._curSDK.init(() => {
+        const finishInitialization = () => {
+            if (SDKSystem.isInitFinished) return;
             SDKSystem.isInitFinished = true;
-        });
+            if (SDKSystem.initTimeout !== null) {
+                clearTimeout(SDKSystem.initTimeout);
+                SDKSystem.initTimeout = null;
+            }
+        };
 
-        // 可能受网络因素的影响，如果10秒还未能接到回调通知，让游戏继续
-        let timeout: number = setTimeout(() => {
-            clearTimeout(timeout);
-            SDKSystem.isInitFinished = true;
-        }, 10000);
+        // SDK 回调可能受网络或平台接口影响，不能阻塞启动流程。
+        SDKSystem.initTimeout = setTimeout(finishInitialization, SDKSystem.InitializationTimeoutMs);
+        try {
+            this._curSDK.init(finishInitialization);
+        } catch (error) {
+            console.error('SDK 初始化失败，继续启动游戏:', error);
+            finishInitialization();
+        }
     }
 }

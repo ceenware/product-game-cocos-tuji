@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+import shutil
 from pathlib import Path
 from typing import Dict, Optional, Sequence, Set, Union
 
@@ -75,6 +76,17 @@ def valid_cocos_source(engine_name: str = ENGINE_NAME, system_name: str = SYSTEM
         'const t="x";\n'
         'require("src/"+t);\n'
         f'if ("{engine_name}" && "{system_name}") {{ cc.assetManager.fsUtils = ral.fsUtils; }}\n'
+    )
+
+
+def modern_cocos_source() -> str:
+    return "\n".join(
+        [
+            "tryDefineGlobal('CC_XIAOMI', false);",
+            "tryDefineGlobal('CC_VIVO', true);",
+            "currentPlatform = Platform.VIVO_MINI_GAME;",
+            'function loadJsFile(path) { return require("" + path); }',
+        ]
     )
 
 
@@ -148,6 +160,21 @@ def make_cocos_fixture(
     return root
 
 
+def make_normalized_cocos_fixture() -> Path:
+    root = make_cocos_fixture()
+    (root / "manifest.json").write_bytes((root / "src" / "manifest.json").read_bytes())
+    (root / "src" / "manifest.json").unlink()
+    (root / "game.js").write_bytes((root / "src" / "game.js").read_bytes())
+    (root / "src" / "game.js").unlink()
+    (root / "externs-game.js").write_text(valid_startup_source(), encoding="utf-8")
+    (root / "main.js").write_text("require('game.js')", encoding="utf-8")
+    (root / "runtime-adapter").mkdir()
+    for name in ("ral.js", "web-adapter.js", "engine-adapter.js"):
+        (root / "runtime-adapter" / name).write_bytes((root / "src" / "runtime-adapter" / name).read_bytes())
+    shutil.rmtree(root / "src" / "runtime-adapter")
+    return root
+
+
 def make_outer_rpk(
     *,
     omit: Optional[Set[str]] = None,
@@ -209,6 +236,20 @@ class VivoVerifyTests(unittest.TestCase):
         checks = vivo_verify.verify_cocos_build(root, CONFIG, VERSION)
         self.assertTrue(all(item["ok"] for item in checks))
 
+    def test_verify_cocos_build_accepts_normalized_quickgame_layout(self):
+        root = make_normalized_cocos_fixture()
+        checks = vivo_verify.verify_cocos_build(root, CONFIG, VERSION)
+        self.assertTrue(all(item["ok"] for item in checks))
+
+    def test_verify_cocos_build_accepts_modern_engine_and_minified_adapter(self):
+        root = make_cocos_fixture(cocos_source=modern_cocos_source())
+        (root / "src" / "runtime-adapter" / "engine-adapter.js").write_text(
+            "cc.assetManager.fsUtils=ral.fsUtils;",
+            encoding="utf-8",
+        )
+        checks = vivo_verify.verify_cocos_build(root, CONFIG, VERSION)
+        self.assertTrue(all(item["ok"] for item in checks))
+
     def test_verify_release_rpk_accepts_valid_package_and_records_sha256(self):
         rpk = make_outer_rpk()
         checks = vivo_verify.verify_release_rpk(rpk, CONFIG, VERSION)
@@ -228,6 +269,22 @@ class VivoVerifyTests(unittest.TestCase):
     def test_verify_startup_entry_accepts_nested_zip_with_discovered_system_bundle(self):
         rpk = make_outer_rpk(system_name="system.bundle.abcdef.js", engine_name="cc.abcdef.js")
         checks = vivo_verify.verify_startup_entry(rpk, CONFIG, VERSION)
+        self.assertTrue(all(item["ok"] for item in checks))
+
+    def test_verify_release_rpk_accepts_unhashed_cocos_36_startup(self):
+        startup = "\n".join(
+            [
+                "require('runtime-adapter/ral.js');",
+                "require('runtime-adapter/web-adapter.js');",
+                "window.self=window;",
+                "require('src/system.bundle.js');",
+                "require('runtime-adapter/engine-adapter.js');",
+                "System.warmup();",
+                "System.import('./src/application.js');",
+            ]
+        )
+        rpk = make_outer_rpk(startup_source=startup, system_name="system.bundle.js")
+        checks = vivo_verify.verify_release_rpk(rpk, CONFIG, VERSION)
         self.assertTrue(all(item["ok"] for item in checks))
 
     def test_verify_release_rpk_rejects_missing_split_archive(self):

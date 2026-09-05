@@ -130,9 +130,23 @@ export class StorageSystem extends BasicSystem {
 
     //加载关卡数据
     private static loadLevelData() {
-        Loader.loadBundle(this.levelDataBound, () => {
+        Loader.loadBundle(this.levelDataBound, (error?: any) => {
+            if (error) {
+                console.error('关卡数据资源包加载失败，使用内置关卡配置:', error);
+                this._allJsonData = {};
+                this._levelData = {};
+                this.isInitFinished = true;
+                return;
+            }
             //加载json数据
             Loader.loadBundleDir(this.levelDataBound, '/', (res: JsonAsset[]) => {
+                if (!res) {
+                    console.error('关卡数据目录加载失败，使用内置关卡配置');
+                    this._allJsonData = {};
+                    this._levelData = {};
+                    this.isInitFinished = true;
+                    return;
+                }
                 res.forEach(e => {
                     this._allJsonData[e.name] = e.json;
                 })
@@ -173,4 +187,3 @@ export class StorageSystem extends BasicSystem {
         }
     }
 }
-

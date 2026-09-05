@@ -47,7 +47,15 @@ export class GameDirector extends Component {
             return;
         }
 
-        let loadFinishCb = (boundName: string) => {
+        let hasFailed = false;
+        let loadFinishCb = (boundName: string, error?: any) => {
+            if (hasFailed) return;
+            if (error) {
+                hasFailed = true;
+                console.error('加载必要子包失败:', boundName, error);
+                cb && cb(error);
+                return;
+            }
             this.subPackgeRec[boundName] = true;
             // 检测是否加载完毕
             let isFinished = true;
@@ -64,8 +72,8 @@ export class GameDirector extends Component {
                 this.subPackgeRec[boundName] = false;
             }
             if (!this.subPackgeRec[boundName]) {
-                Loader.loadBundle(this.subPackgeArr[i], () => {
-                    loadFinishCb(boundName);
+                Loader.loadBundle(this.subPackgeArr[i], (error?: any) => {
+                    loadFinishCb(boundName, error);
                 }, false, false);
             } else {
                 loadFinishCb(boundName);
@@ -80,9 +88,19 @@ export class GameDirector extends Component {
             cb && cb();
         } else {
             //先加载自定义资源
-            this.loadCustomPrefabs(() => {
+            this.loadCustomPrefabs((error?: any) => {
+                if (error) {
+                    cb && cb(error);
+                    return;
+                }
                 //获取 levelManager
                 this._levelManager = GlobalPool.get('LevelManager');
+                if (!this._levelManager) {
+                    const levelError = new Error('LevelManager prefab is missing');
+                    console.error(levelError);
+                    cb && cb(levelError);
+                    return;
+                }
                 this._levelManager.setPosition(Vec3.ZERO);
                 this._levelManager.parent = this.node;
 
@@ -103,7 +121,15 @@ export class GameDirector extends Component {
 
     /**加载关卡自定义的预制体 并创建对象池 */
     private loadCustomPrefabs(cb) {
-        let loadPerfabFinish = (boundName: string) => {
+        let hasFailed = false;
+        let loadPerfabFinish = (boundName: string, error?: any) => {
+            if (hasFailed) return;
+            if (error) {
+                hasFailed = true;
+                console.error('加载游戏预制体失败:', boundName, error);
+                cb && cb(error);
+                return;
+            }
             this.customPrefabState[boundName] = true;
             // 检测是否加载完毕
             let isFinished = true;
@@ -121,8 +147,16 @@ export class GameDirector extends Component {
             }
             if (!this.customPrefabState[bound]) {
                 const url = this.customPrefabUrl[bound];
-                Loader.loadBundle(bound, () => {
+                Loader.loadBundle(bound, (error?: any) => {
+                    if (error) {
+                        loadPerfabFinish(bound, error);
+                        return;
+                    }
                     Loader.loadBundleDir(bound, url, (prefabs: Prefab[]) => {
+                        if (!prefabs) {
+                            loadPerfabFinish(bound, new Error(`预制体目录加载失败: ${bound}/${url}`));
+                            return;
+                        }
                         for (let i = 0; i < prefabs.length; i++) {
                             const p = prefabs[i];
                             GlobalPool.createPool(p.data.name, p);
@@ -183,11 +217,21 @@ export class GameDirector extends Component {
         //
         this._isOver = false;
         //加载游戏必须的其他子包
-        this.loadSubBound(() => {
+        this.loadSubBound((error?: any) => {
+            if (error) {
+                console.error('游戏启动资源加载失败:', error);
+                cb && cb(error);
+                return;
+            }
             //加载关卡额外需要的分包
             this.loadExtralAssets(() => {
                 //加载关卡必须的预制体
-                this.loadGameAssets(() => {
+                this.loadGameAssets((error?: any) => {
+                    if (error) {
+                        console.error('游戏预制体加载失败:', error);
+                        cb && cb(error);
+                        return;
+                    }
                     //预先创建指定的预制数量
                     this.preLoadPrefabs();
                     //激活游戏内容
@@ -237,7 +281,15 @@ export class GameDirector extends Component {
         //初始化状态
         this._tmpLoadState = {};
 
-        let loadPerfabFinish = (boundName: string) => {
+        let hasFailed = false;
+        let loadPerfabFinish = (boundName: string, error?: any) => {
+            if (hasFailed) return;
+            if (error) {
+                hasFailed = true;
+                console.error('动态加载分包失败:', boundName, error);
+                cb && cb(error);
+                return;
+            }
             this._tmpLoadState[boundName] = true;
             // 检测是否加载完毕
             let isFinished = true;
@@ -256,11 +308,19 @@ export class GameDirector extends Component {
             const isMask = d.isMask || false;
             console.log('#1 动态加载分包开始:', bound);
 
-            Loader.loadBundle(bound, () => {
+            Loader.loadBundle(bound, (error?: any) => {
+                if (error) {
+                    loadPerfabFinish(bound, error);
+                    return;
+                }
                 //加载预制体-创建对象池
                 if (d.isLoadPrefab) {
                     const url = d.prefabUrl || '';
                     Loader.loadBundleDir(bound, url, (prefabs: Prefab[]) => {
+                        if (!prefabs) {
+                            loadPerfabFinish(bound, new Error(`动态预制体目录加载失败: ${bound}/${url}`));
+                            return;
+                        }
                         for (let i = 0; i < prefabs.length; i++) {
                             const p = prefabs[i];
                             GlobalPool.createPool(p.data.name, p);
@@ -277,4 +337,3 @@ export class GameDirector extends Component {
     // #endregion
 
 }
-

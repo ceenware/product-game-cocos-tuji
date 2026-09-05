@@ -5,6 +5,7 @@ import EventManager from "../Managers/EventManager";
 import { EventTypes } from "../Managers/EventTypes";
 
 export default class Loader {
+    private static readonly BundleLoadTimeoutMs = 12000;
     /**记录文件夹路径对应的资源数组 */
     protected static dirAsset: { [key: string]: Asset[] } = {};
     /**记录所有加载完成的资源，包括通过文件夹加载的资源 */
@@ -157,36 +158,86 @@ export default class Loader {
                 }, 0);
                 break;
             }
+            case LoadState.failed: {
+                setTimeout(() => {
+                    if (!!cb) cb(record.error);
+                }, 0);
+                break;
+            }
         }
     }
+
+    private static loadNextSubpackage() {
+        if (this.subpackageSequence.length === 0) {
+            this.hideSubpackageProgress();
+            return;
+        }
+
+        const name = this.subpackageSequence[0];
+        const record = this.subpackageRecords[name];
+        if (!record) {
+            console.error("Loader: 子包队列记录不存在：", name);
+            this.subpackageSequence.shift();
+            this.loadNextSubpackage();
+            return;
+        }
+        record.turnToLoad();
+        this.loadSubpackage(name, null, !!record.maskCount);
+    }
+
+    private static finishSubpackage(name: string, err?: any) {
+        const index = this.subpackageSequence.indexOf(name);
+        if (index >= 0) {
+            this.subpackageSequence.splice(index, 1);
+        }
+
+        if (err) {
+            this.subpackageRecords[name].loadFail(err);
+        } else {
+            this.subpackageRecords[name].loadFinish();
+        }
+        this.hideSubpackageProgress();
+        this.loadNextSubpackage();
+    }
+
     private static _loadSubpackage(name) {
         console.log("Loader: 开始加载子包：", name);
         // console.log("子包加载队列：", this.subpackageSequence.toString());
         this.subpackageRecords[name].loadStart();
-        assetManager.loadBundle(name, (err, bundle) => {
+        this.runTimedLoad(`子包 ${name}`, (done) => assetManager.loadBundle(name, done), (err, bundle) => {
             if (err) {
                 console.error("Loader: 子包加载出错：", name);
                 console.error(err);
+                this.finishSubpackage(name, err);
                 return;
             }
             console.log("Loader: 子包加载完成：", name);
-            let index = this.subpackageSequence.indexOf(name);
-            this.subpackageSequence.splice(index, 1);
-            // console.log("等待加载的子包列表：", this.subpackageSequence.toString());
-            this.hideSubpackageProgress();
-            this.subpackageRecords[name].loadFinish();
-            if (this.subpackageSequence.length > 0) {
-                // setTimeout(() => {
-                let str = this.subpackageSequence[0];
-                // console.log("加载下一个子包：", str);
-                let record = this.subpackageRecords[str];
-                if (!!record) {
-                    record.turnToLoad();
-                }
-                this.loadSubpackage(str, null, !!this.subpackageRecords[str].maskCount);
-                // }, 0);
-            }
+            this.finishSubpackage(name);
         });
+    }
+
+    private static runTimedLoad(label: string, start: (done: Function) => void, finish: Function) {
+        let settled = false;
+        const timeout = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            const error = new Error(`加载超时: ${label}`);
+            console.error('Loader:', error.message);
+            finish(error, null);
+        }, this.BundleLoadTimeoutMs);
+
+        const done = (...args: any[]) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            finish(...args);
+        };
+
+        try {
+            start(done);
+        } catch (error) {
+            done(error, null);
+        }
     }
     protected static subpackageProgressTimer: number = null;
     /**显示子包加载进度条 */
@@ -250,8 +301,13 @@ export default class Loader {
         if (mask) {
             this.showMask();
         }
-        if (null !== assetType) {
-            b.load(url, assetType, (err, res) => {
+        this.runTimedLoad(`资源 ${bundle}/${url}`, (done) => {
+            if (null !== assetType) {
+                b.load(url, assetType, done);
+            } else {
+                b.load(url, done);
+            }
+        }, (err, res) => {
                 if (mask) {
                     this.hideMask();
                 }
@@ -262,19 +318,6 @@ export default class Loader {
                 }
                 cb(res);
             });
-        } else {
-            b.load(url, (err, res) => {
-                if (mask) {
-                    this.hideMask();
-                }
-                if (err) {
-                    error(err.message || err);
-                    cb(null);
-                    return;
-                }
-                cb(res);
-            });
-        }
     }
     /**
      * 从资源包加载多个资源，调用前请确保该资源包已加载完成
@@ -305,8 +348,13 @@ export default class Loader {
         if (mask) {
             this.showProgressBar();
         }
-        if (!!assetType) {
-            b.load(urls, assetType, this.updateProgress.bind(this), (err, res) => {
+        this.runTimedLoad(`资源数组 ${bundle}`, (done) => {
+            if (!!assetType) {
+                b.load(urls, assetType, this.updateProgress.bind(this), done);
+            } else {
+                b.load(urls, this.updateProgress.bind(this), done);
+            }
+        }, (err, res) => {
                 if (mask) {
                     this.hideProgressBar();
                 }
@@ -317,19 +365,6 @@ export default class Loader {
                 }
                 cb(res);
             });
-        } else {
-            b.load(urls, this.updateProgress.bind(this), (err, res) => {
-                if (mask) {
-                    this.hideProgressBar();
-                }
-                if (err) {
-                    error(err.message || err);
-                    cb(null);
-                    return;
-                }
-                cb(res);
-            });
-        }
     }
     /**
      * 从资源包中加载文件夹，调用前请确保该资源包已加载完成
@@ -360,8 +395,13 @@ export default class Loader {
         if (mask) {
             this.showProgressBar();
         }
-        if (!!assetType) {
-            b.loadDir(dir, assetType, this.updateProgress.bind(this), (err, arr) => {
+        this.runTimedLoad(`资源目录 ${bundle}/${dir}`, (done) => {
+            if (!!assetType) {
+                b.loadDir(dir, assetType, this.updateProgress.bind(this), done);
+            } else {
+                b.loadDir(dir, this.updateProgress.bind(this), done);
+            }
+        }, (err, arr) => {
                 if (mask) {
                     this.hideProgressBar();
                 }
@@ -372,19 +412,6 @@ export default class Loader {
                 }
                 cb(arr);
             });
-        } else {
-            b.loadDir(dir, this.updateProgress.bind(this), (err, arr) => {
-                if (mask) {
-                    this.hideProgressBar();
-                }
-                if (err) {
-                    log(err);
-                    cb(null);
-                    return;
-                }
-                cb(arr);
-            });
-        }
 
     }
     public static loadBundleScene(bundle: string, scene: string, cb: (res) => void, mask?) {
@@ -400,12 +427,13 @@ export default class Loader {
         if (mask) {
             this.showProgressBar();
         }
-        b.loadScene(scene, this.updateProgress.bind(this), (err, res) => {
+        this.runTimedLoad(`场景 ${bundle}/${scene}`, (done) => b.loadScene(scene, this.updateProgress.bind(this), done), (err, res) => {
             if (mask) {
                 this.hideProgressBar();
             }
             if (!!err) {
                 console.error(err);
+                cb(null);
                 return;
             }
             cb(res);
@@ -489,6 +517,7 @@ class SubpackageRecord {
     /**回调数组 */
     public cbs: Function[];
     public maskCount: number;
+    public error: any = null;
 
     public constructor(name: string, cb: Function, mask: boolean) {
         this.name = name;
@@ -509,11 +538,21 @@ class SubpackageRecord {
         this.state = LoadState.loading;
     }
     public loadFinish() {
+        this.error = null;
         while (this.cbs.length > 0) {
             let cb = this.cbs.shift();
             if (!!cb) cb();
         }
         this.state = LoadState.finished;
+        this.maskCount = 0;
+    }
+    public loadFail(err: any) {
+        this.error = err;
+        while (this.cbs.length > 0) {
+            let cb = this.cbs.shift();
+            if (!!cb) cb(err);
+        }
+        this.state = LoadState.failed;
         this.maskCount = 0;
     }
     public turnToLoad() {
@@ -532,4 +571,6 @@ enum LoadState {
     finished,
     /**在队列中，轮到加载它了 */
     turnTo,
+    /**加载失败，后续调用应立即收到失败结果 */
+    failed,
 }

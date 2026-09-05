@@ -3,9 +3,9 @@ const path = require('node:path');
 
 const MAIN_IMPORT_MAP_PATTERN = /(?:const|var)\s+importMap\s*=\s*require\((['"])\.\/src\/import-map\.js\1\)\.default;?/;
 const STARTUP_REQUIRE_PATTERNS = {
-  ral: /require\((['"])\.\/ral\.min(?:\.js)?\1\)/,
-  web: /require\((['"])\.\/web-adapter(?:\.js)?\1\)/,
-  engine: /require\((['"])\.\/engine-adapter(?:\.js)?\1\)/,
+  ral: /require\((['"])(?:\.\/ral\.min(?:\.js)?|(?:runtime-adapter\/)?ral(?:\.js)?)\1\)/,
+  web: /require\((['"])(?:\.\/web-adapter(?:\.js)?|runtime-adapter\/web-adapter(?:\.js)?)\1\)/,
+  engine: /require\((['"])(?:\.\/engine-adapter(?:\.js)?|runtime-adapter\/engine-adapter(?:\.js)?)\1\)/,
 };
 
 function readJson(filePath) {
@@ -95,12 +95,18 @@ function hasStartupRequire(source, moduleName) {
 
 function addStartupRuntimeRequires(source, label) {
   if (!hasStartupRequire(source, 'ral')) {
-    const commaWeb = /require\((['"])\.\/web-adapter(?:\.js)?\1\),/;
-    const standaloneWeb = /require\((['"])\.\/web-adapter(?:\.js)?\1\);/;
+    const commaWeb = /require\((['"])((?:\.\/)?(?:runtime-adapter\/)?web-adapter(?:\.js)?)\1\),/;
+    const standaloneWeb = /require\((['"])((?:\.\/)?(?:runtime-adapter\/)?web-adapter(?:\.js)?)\1\);/;
     if (commaWeb.test(source)) {
-      source = source.replace(commaWeb, 'require("./ral.min"),require("./web-adapter"),');
+      source = source.replace(commaWeb, (match, quote, webPath) => {
+        const ralPath = webPath.startsWith('runtime-adapter/') ? 'runtime-adapter/ral.js' : './ral.min';
+        return `require("${ralPath}"),require("${webPath}"),`;
+      });
     } else if (standaloneWeb.test(source)) {
-      source = source.replace(standaloneWeb, "require('./ral.min');\nrequire('./web-adapter');");
+      source = source.replace(standaloneWeb, (match, quote, webPath) => {
+        const ralPath = webPath.startsWith('runtime-adapter/') ? 'runtime-adapter/ral.js' : './ral.min';
+        return `require("${ralPath}");\nrequire("${webPath}");`;
+      });
     } else {
       throw new Error(`${label}: missing web-adapter require for RAL`);
     }
@@ -113,10 +119,10 @@ function installCanvasBridge(source, label) {
     return source;
   }
 
-  const commaWeb = /require\((['"])\.\/web-adapter(?:\.js)?\1\),/;
-  const standaloneWeb = /require\((['"])\.\/web-adapter(?:\.js)?\1\);/;
+  const commaWeb = /require\((['"])((?:\.\/)?(?:runtime-adapter\/)?web-adapter(?:\.js)?)\1\),/;
+  const standaloneWeb = /require\((['"])((?:\.\/)?(?:runtime-adapter\/)?web-adapter(?:\.js)?)\1\);/;
   if (commaWeb.test(source)) {
-    return source.replace(commaWeb, 'require("./web-adapter"),installVivoCanvasBridge(),');
+    return source.replace(commaWeb, (match, quote, webPath) => `require("${webPath}"),installVivoCanvasBridge(),`);
   }
   if (standaloneWeb.test(source)) {
     return source.replace(standaloneWeb, (match) => `${match}\ninstallVivoCanvasBridge();`);
@@ -128,22 +134,24 @@ function addScreenCompatibility(source, label) {
   source = source.replace(/,screen=window\.screen;/g, ';');
   const hasScreenCompatibility = /\bscreen\s*=\s*window\.screen/.test(source);
   const hasCanvasSizing = source.includes('startupCanvasForSizing') || /(?:canvas|startupCanvas|t)\.(?:width|height)\s*\*=?\s*2/.test(source);
-  const commaWeb = /require\((['"])\.\/web-adapter(?:\.js)?\1\),/;
+  const commaWeb = /require\((['"])((?:\.\/)?(?:runtime-adapter\/)?web-adapter(?:\.js)?)\1\),/;
   if (hasScreenCompatibility && hasCanvasSizing) {
     return source;
   }
   if (commaWeb.test(source)) {
-    const compactSizing = `require("./web-adapter"),(()=>{
+    const compactSizing = commaWeb.exec(source);
+    const webPath = compactSizing[2];
+    const sizingSource = `require("${webPath}"),(()=>{
     ${hasScreenCompatibility ? '' : 'if ("undefined"!=typeof window&&window.screen&&"undefined"==typeof screen) {\n        screen=window.screen;\n    }\n    '}const t=getRuntimeCanvas();
     if ("undefined"!=typeof window&&t&&window.devicePixelRatio>=2) {
         t.width*=2;
         t.height*=2;
     }
 })(),`;
-    return source.replace(commaWeb, compactSizing);
+    return source.replace(commaWeb, sizingSource);
   }
 
-  const webRequire = /require\((['"])\.\/web-adapter(?:\.js)?\1\);?/;
+  const webRequire = /require\((['"])((?:\.\/)?(?:runtime-adapter\/)?web-adapter(?:\.js)?)\1\);?/;
   if (!webRequire.test(source)) {
     throw new Error(`${label}: missing web-adapter require for screen compatibility`);
   }
@@ -357,7 +365,7 @@ function forceVivoPlatform(source, label) {
     return source;
   }
 
-  const applicationFunction = /function onApplicationCreated\(application\)\s*\{[\s\S]*?require\((['"])\.\/engine-adapter(?:\.js)?\1\);/;
+  const applicationFunction = /function onApplicationCreated\(application\)\s*\{[\s\S]*?require\((['"])(?:\.\/engine-adapter(?:\.js)?|runtime-adapter\/engine-adapter(?:\.js)?)\1\);/;
   if (applicationFunction.test(source)) {
     source = source.replace(applicationFunction, (match) => `${match}\n        forceVivoPlatform(cc);`);
     return `${source}
@@ -365,7 +373,7 @@ function forceVivoPlatform(source, label) {
 ${FORCE_VIVO_PLATFORM_SOURCE}`;
   }
 
-  const compressedApplication = /require\((['"])\.\/engine-adapter(?:\.js)?\1\),([A-Za-z_$][\w$]*)\.init\(([A-Za-z_$][\w$]*)\)\)/;
+  const compressedApplication = /require\((['"])(?:\.\/engine-adapter(?:\.js)?|runtime-adapter\/engine-adapter(?:\.js)?)\1\),([A-Za-z_$][\w$]*)\.init\(([A-Za-z_$][\w$]*)\)\)/;
   if (compressedApplication.test(source)) {
     source = source.replace(
       compressedApplication,
@@ -405,27 +413,31 @@ function patchMainSource(source, importMap, file = 'main.js') {
 function patchCocosEngineSource(source, file = 'Cocos engine') {
   if (source.includes('"CC_XIAOMI",!0')) {
     source = source.replace('"CC_XIAOMI",!0', '"CC_XIAOMI",!1');
-  } else if (!source.includes('"CC_XIAOMI",!1')) {
+  } else if (source.includes("tryDefineGlobal('CC_XIAOMI', true)")) {
+    source = source.replace("tryDefineGlobal('CC_XIAOMI', true)", "tryDefineGlobal('CC_XIAOMI', false)");
+  } else if (!source.includes('"CC_XIAOMI",!1') && !source.includes("tryDefineGlobal('CC_XIAOMI', false)")) {
     throw new Error(`${file}: missing CC_XIAOMI constant`);
   }
 
   if (source.includes('"CC_VIVO",!1')) {
     source = source.replace('"CC_VIVO",!1', '"CC_VIVO",!0');
-  } else if (!source.includes('"CC_VIVO",!0')) {
+  } else if (source.includes("tryDefineGlobal('CC_VIVO', false)")) {
+    source = source.replace("tryDefineGlobal('CC_VIVO', false)", "tryDefineGlobal('CC_VIVO', true)");
+  } else if (!source.includes('"CC_VIVO",!0') && !source.includes("tryDefineGlobal('CC_VIVO', true)")) {
     throw new Error(`${file}: missing CC_VIVO constant`);
   }
 
   const platformPattern = /=([A-Za-z_$][\w$]*)\.XIAOMI_QUICK_GAME;var /;
   if (platformPattern.test(source)) {
     source = source.replace(platformPattern, '=$1.VIVO_MINI_GAME;var ');
-  } else if (!/=([A-Za-z_$][\w$]*)\.VIVO_MINI_GAME;var /.test(source)) {
+  } else if (!/=([A-Za-z_$][\w$]*)\.VIVO_MINI_GAME;var /.test(source) && !/currentPlatform\s*=\s*Platform\.VIVO_MINI_GAME/.test(source)) {
     throw new Error(`${file}: missing XIAOMI_QUICK_GAME platform assignment`);
   }
 
   const ralPattern = /(var [^;]+?=\{\};)([A-Za-z_$][\w$]*)=qg,(Object\.keys\(\2\)\.forEach)/;
   if (ralPattern.test(source)) {
     source = source.replace(ralPattern, '$1$2="undefined"!=typeof ral?ral:qg,$3');
-  } else if (!source.includes('"undefined"!=typeof ral?ral:qg')) {
+  } else if (!source.includes('"undefined"!=typeof ral?ral:qg') && !/function\s+loadJsFile\s*\([^)]*\)\s*\{[\s\S]*?require\(\s*""\s*\+\s*path\s*\)/.test(source)) {
     throw new Error(`${file}: missing qg clone statement for RAL patch`);
   }
 
@@ -442,18 +454,43 @@ function patchCocosEngineSource(source, file = 'Cocos engine') {
       break;
     }
   }
-  if (!source.includes(safePluginLoader) && !source.includes("require('src/'+t)")) {
+  const modernSafePluginLoader = /function\s+loadJsFile\s*\([^)]*\)\s*\{[\s\S]*?require\(\s*""\s*\+\s*path\s*\)/.test(source);
+  if (!source.includes(safePluginLoader) && !source.includes("require('src/'+t)") && !modernSafePluginLoader) {
     throw new Error(`${file}: missing safe Cocos plugin loader path`);
   }
   return source;
+}
+
+function patchUniSdkCopyrightSource(source, copyright, file = 'uniSdk') {
+  const owner = copyright?.owner;
+  const softwareRegistration = copyright?.softwareRegistration;
+  if (!owner || !softwareRegistration) {
+    throw new Error(`${file}: missing copyright owner or software registration`);
+  }
+
+  const replacement = `游戏著作权人: ${owner}\\n软件著作权登记号: ${softwareRegistration}`;
+  const placeholder = /游戏著作权人:\s*__COPY_RIGHT_TEXT_/;
+  if (placeholder.test(source)) {
+    return source.replace(placeholder, replacement);
+  }
+  if (source.includes(replacement)) {
+    return source;
+  }
+  throw new Error(`${file}: missing copyright label placeholder`);
 }
 
 function patchUniSdkSource(source, file = 'uniSdk') {
   const oldSnippet = '2 == i.Global.engineType ? "XIAOMI_QUICK_GAME" == window.cc.sys.platform : void 0 !== window.qg;';
   const newSnippet = '2 == i.Global.engineType ? "XIAOMI_QUICK_GAME" == window.cc.sys.platform : void 0 !== window.qg && window.qg.getProvider && -1 < window.qg.getProvider().toLowerCase().indexOf("xiaomi");';
   if (source.includes(oldSnippet)) {
-    return source.replace(oldSnippet, newSnippet);
+    source = source.replace(oldSnippet, newSnippet);
   }
+
+  source = source.replace(
+    /void 0!==window\.qg&&-1<window\.qg\.getProvider\(\)\.toLowerCase\(\)\.indexOf\((["'])(xiaomi|vivo|oppo)\1\)/g,
+    'void 0!==window.qg&&window.qg.getProvider&&-1<window.qg.getProvider().toLowerCase().indexOf("$2")',
+  );
+
   if (source.includes(newSnippet)) {
     return source;
   }
@@ -567,22 +604,28 @@ function planTree({ tree, adapterRoot, config, version, optional = false }) {
 
   const vivoRuntime = path.join(adapterRoot, 'runtime', 'vivo-mini-game');
   const commonRuntime = path.join(adapterRoot, 'runtime');
-  const mainPath = path.join(tree, 'main.js');
+  const normalizedLayout = fs.existsSync(path.join(tree, 'subpackages')) && fs.existsSync(path.join(tree, 'externs-game.js'));
+  const mainPath = normalizedLayout ? path.join(tree, 'externs-game.js') : path.join(tree, 'main.js');
   const importMapPath = path.join(tree, 'src', 'import-map.js');
   const settingsPath = path.join(tree, 'src', 'settings.json');
   const manifestPath = path.join(tree, 'manifest.json');
   const enginePath = findExactlyOne(path.join(tree, 'src', 'cocos-js'), /^cc(?:\.[^.]+)?\.js$/, tree);
-  const uniSdkPath = findExactlyOne(path.join(tree, 'src', 'assets', 'uniSdk'), /^uniSdk(?:\.[^.]+)?\.js$/, tree);
+  const uniSdkPath = findExactlyOne(path.join(tree, 'src', 'assets', 'uniSdk'), /^uniSdk(?:\.[^.]+)*\.js$/, tree);
 
   const importMap = readImportMap(importMapPath);
   const mainSource = patchMainSource(fs.readFileSync(mainPath, 'utf8'), importMap, mainPath);
   const settings = patchSettings(readJson(settingsPath), config);
   const manifest = patchManifest(readJson(manifestPath), config, version);
   const engineSource = patchCocosEngineSource(fs.readFileSync(enginePath, 'utf8'), enginePath);
-  const uniSdkSource = patchUniSdkSource(fs.readFileSync(uniSdkPath, 'utf8'), uniSdkPath);
+  const uniSdkSource = patchUniSdkSource(
+    patchUniSdkCopyrightSource(fs.readFileSync(uniSdkPath, 'utf8'), config.copyright, uniSdkPath),
+    uniSdkPath,
+  );
   const subpackagePlans = planSubpackages(tree, config.subpackages);
 
-  const runtimeTarget = path.join(tree, 'src', 'runtime-adapter');
+  const runtimeTarget = normalizedLayout
+    ? path.join(tree, 'runtime-adapter')
+    : path.join(tree, 'src', 'runtime-adapter');
   const files = [
     [path.join(vivoRuntime, 'ral.min.js'), path.join(runtimeTarget, 'ral.js')],
     [path.join(commonRuntime, 'web-adapter.min.js'), path.join(runtimeTarget, 'web-adapter.js')],
@@ -666,6 +709,7 @@ module.exports = {
   normalizeStartupRequirePaths,
   patchMainSource,
   patchCocosEngineSource,
+  patchUniSdkCopyrightSource,
   patchUniSdkSource,
   patchManifest,
   patchSettings,

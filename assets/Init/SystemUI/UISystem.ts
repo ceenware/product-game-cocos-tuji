@@ -56,7 +56,12 @@ export class UISystem extends BasicSystem {
     //#region -----------------私有方法----------------
     //加载UI bound
     private static loadUIBound() {
-        Loader.loadBundle(this.uiBound, () => {
+        Loader.loadBundle(this.uiBound, (error?: any) => {
+            if (error) {
+                console.error('UI资源包加载失败:', error);
+                this.isInitFinished = true;
+                return;
+            }
             this.loadUICustomPerfabs(() => {
                 this.isInitFinished = true;
             })
@@ -66,6 +71,11 @@ export class UISystem extends BasicSystem {
     //加载UI 自定义的预制体 并创建对象池
     private static loadUICustomPerfabs(cb) {
         Loader.loadBundleDir(this.uiBound, this.uiCustomPerfabsUrl, (perfabs: Prefab[]) => {
+            if (!perfabs) {
+                console.error('UI预制体目录加载失败:', this.uiCustomPerfabsUrl);
+                cb && cb();
+                return;
+            }
             //创建对象池
             for (let i = 0; i < perfabs.length; i++) {
                 const p = perfabs[i];
@@ -105,4 +115,3 @@ export class UISystem extends BasicSystem {
     }
     //#endregion
 }
-

@@ -70,6 +70,20 @@ function revalidateArtifactChecksum(rpkPath, checksumPath) {
   return true;
 }
 
+function isSuccessfulCocosBuild(result, { runnerOS = process.env.RUNNER_OS, exportDir } = {}) {
+  if (result?.status === 0) return true;
+  return runnerOS === 'macOS'
+    && result?.status === 36
+    && Boolean(exportDir)
+    && fs.existsSync(path.join(exportDir, 'cocos.compile.config.json'));
+}
+
+function cocosSpawnOptions(env = process.env) {
+  const childEnv = { ...env };
+  delete childEnv.ELECTRON_RUN_AS_NODE;
+  return { stdio: 'inherit', env: childEnv };
+}
+
 async function build(options) {
   const args = options.args || options;
   const dependencies = options.dependencies || {};
@@ -91,14 +105,16 @@ async function build(options) {
   fs.rmSync(args.workspace, { recursive: true, force: true });
   fs.mkdirSync(args.workspace, { recursive: true });
   const buildRoot = path.join(args.workspace, 'build');
-  const cocosResult = spawnImpl(args.cocos, buildCocosArguments(args['project-root'], buildRoot), { stdio: 'inherit' });
-  if (cocosResult.status !== 0) throw new Error(`Cocos Creator exited with status ${cocosResult.status}`);
   const projectDir = path.join(buildRoot, 'vivo-mini-game');
+  const cocosResult = spawnImpl(args.cocos, buildCocosArguments(args['project-root'], buildRoot), cocosSpawnOptions());
+  if (!isSuccessfulCocosBuild(cocosResult, { runnerOS: args['runner-os'], exportDir: projectDir })) {
+    throw new Error(`Cocos Creator exited with status ${cocosResult.status}`);
+  }
   if (!fs.existsSync(projectDir)) throw new Error(`missing Cocos export: ${projectDir}`);
   patchCocosBuildImpl({ buildDir: projectDir, config, version });
-  runPythonVerifierImpl(path.join(__dirname, 'verify-cocos-build.py'), projectDir, configPath, args['version-file']);
   patchRuntimeProjectImpl({ projectDir, adapterRoot: args['adapter-root'], config, version });
   patchMinPlatformImpl({ quickgameRoot: path.join(__dirname, '..', 'node_modules', 'quickgame-cli'), minPlatformVersion: config.minPlatformVersion });
+  runPythonVerifierImpl(path.join(__dirname, 'verify-cocos-build.py'), projectDir, configPath, args['version-file']);
   let signing = { privateKey: args['private-key'], certificate: args.certificate };
   const outputRpk = path.join(args.workspace, `${config.packageName}.rpk`);
   let temporarySigningDir;
@@ -148,4 +164,4 @@ if (require.main === module) main().catch((error) => {
   process.exitCode = 1;
 });
 
-module.exports = { build, cleanupTemporarySigningDirectory, generateTestCertificate, parseArgs, pythonCandidates, revalidateArtifactChecksum, runPythonVerifier };
+module.exports = { build, cleanupTemporarySigningDirectory, cocosSpawnOptions, generateTestCertificate, isSuccessfulCocosBuild, parseArgs, pythonCandidates, revalidateArtifactChecksum, runPythonVerifier };

@@ -7,11 +7,31 @@ const path = require('node:path');
 const test = require('node:test');
 
 const { assembleArtifacts, formatValidationReport } = require('../lib/artifacts');
-const { build, revalidateArtifactChecksum } = require('../scripts/build');
+const { build, cocosSpawnOptions, isSuccessfulCocosBuild, revalidateArtifactChecksum } = require('../scripts/build');
 const { spawnSync: runNode } = require('node:child_process');
 
 const config = require('../release.json');
 const version = { versionName: '1.0.11', versionCode: 12, tag: 'vivo-v1.0.11' };
+
+test('accepts Cocos Creator macOS status 36 only after a complete export exists', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vivo-cocos-status-'));
+  const exportDir = path.join(directory, 'vivo-mini-game');
+  fs.mkdirSync(exportDir, { recursive: true });
+  fs.writeFileSync(path.join(exportDir, 'cocos.compile.config.json'), '{}\n');
+
+  try {
+    assert.equal(isSuccessfulCocosBuild({ status: 36 }, { runnerOS: 'macOS', exportDir }), true);
+    assert.equal(isSuccessfulCocosBuild({ status: 36 }, { runnerOS: 'Windows', exportDir }), false);
+    assert.equal(isSuccessfulCocosBuild({ status: 36 }, { runnerOS: 'macOS', exportDir: path.join(directory, 'missing') }), false);
+  } finally {
+    cleanup(directory);
+  }
+});
+
+test('removes ELECTRON_RUN_AS_NODE before launching Cocos Creator', () => {
+  assert.equal(cocosSpawnOptions({ ELECTRON_RUN_AS_NODE: '1', PATH: '/usr/bin' }).env.ELECTRON_RUN_AS_NODE, undefined);
+  assert.equal(cocosSpawnOptions({ ELECTRON_RUN_AS_NODE: '1', PATH: '/usr/bin' }).env.PATH, '/usr/bin');
+});
 
 function makeInput() {
   const inputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vivo-artifact-input-'));
@@ -257,7 +277,7 @@ test('assembles artifacts only after final verification and cleans test signing 
       },
     });
 
-    assert.deepEqual(order, ['cocos', 'patch-cocos', 'verify-cocos', 'patch-runtime', 'patch-cli', 'certificate', 'package', 'verify-final']);
+    assert.deepEqual(order, ['cocos', 'patch-cocos', 'patch-runtime', 'patch-cli', 'verify-cocos', 'certificate', 'package', 'verify-final']);
     assert.equal(result.artifacts.length, 5);
     assert.deepEqual(result.artifacts.map((file) => path.basename(file)).sort(), [
       'SHA256SUMS',

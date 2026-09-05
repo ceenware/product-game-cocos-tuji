@@ -70,6 +70,37 @@ test('passes the temporary project path to quickgame compile', async () => {
   assert.equal(Buffer.isBuffer(result.buffer), true);
 });
 
+test('waits for the default quickgame compiler and ignores stale output', async () => {
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vivo-quickgame-project-'));
+  const projectConfig = { ...config, subpackages: ['Game'] };
+  try {
+    fs.mkdirSync(path.join(projectDir, 'subpackages', 'Game'), { recursive: true });
+    fs.writeFileSync(path.join(projectDir, 'manifest.json'), JSON.stringify({
+      package: projectConfig.packageName,
+      versionCode: 12,
+      minPlatformVersion: 1206,
+      icon: 'icon.png',
+      subpackages: [{ name: 'usr_Game', root: 'subpackages/Game/' }],
+    }));
+    fs.writeFileSync(path.join(projectDir, 'icon.png'), 'icon');
+    fs.writeFileSync(path.join(projectDir, 'main.js'), 'console.log("main");\n');
+    fs.writeFileSync(path.join(projectDir, 'subpackages', 'Game', 'main.js'), "require('./index.js');\n");
+    fs.writeFileSync(path.join(projectDir, 'subpackages', 'Game', 'index.js'), 'console.log("subpackage");\n');
+    fs.writeFileSync(path.join(projectDir, 'subpackages', 'Game', 'config.json'), '{}');
+
+    await assert.doesNotReject(() => packageRpk({
+      projectDir,
+      config: projectConfig,
+      privateKeyPath: keyA,
+      certificatePath: certA,
+      outputPath: path.join(projectDir, 'signed.rpk'),
+    }));
+    assert.equal(fs.existsSync(path.join(projectDir, 'signed.rpk')), true);
+  } finally {
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  }
+});
+
 test('signs configured inner packages and embeds the test certificate', async () => {
   const result = await signRpkSet({ distTempDir, config, privateKeyPath: keyA, certificatePath: certA });
   assert.equal(result.buffer.includes(Buffer.from('RPK Sig Block 42')), true);
@@ -81,4 +112,16 @@ test('signs configured inner packages and embeds the test certificate', async ()
   const eocd = tampered.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
   tampered[tampered.readUInt32LE(eocd + 16) + 20] ^= 1;
   assert.throws(() => assertSignedByCertificate(tampered, fs.readFileSync(certA)), /signature does not verify/);
+});
+
+test('keeps the compatibility full package manifest-only when split packages exist', async () => {
+  const result = await signRpkSet({ distTempDir, config, privateKeyPath: keyA, certificatePath: certA });
+  const outer = await JSZip.loadAsync(result.buffer);
+  const fullPackage = outer.file(`${config.packageName}.rpk`);
+  assert.ok(fullPackage);
+  const fullEntries = await JSZip.loadAsync(await fullPackage.async('nodebuffer'));
+  assert.deepEqual(
+    Object.keys(fullEntries.files).filter((name) => !fullEntries.files[name].dir && name !== 'META-INF/CERT'),
+    ['manifest.json'],
+  );
 });

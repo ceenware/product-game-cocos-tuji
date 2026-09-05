@@ -6,6 +6,12 @@ function validateReleaseConfig(config) {
   for (const key of ['platform', 'branch', 'tagPrefix', 'packageName']) {
     if (typeof config[key] !== 'string' || !config[key]) throw new Error(`invalid ${key}`);
   }
+  if (typeof config.copyright?.owner !== 'string' || !config.copyright.owner) {
+    throw new Error('invalid copyright.owner');
+  }
+  if (typeof config.copyright?.softwareRegistration !== 'string' || !config.copyright.softwareRegistration) {
+    throw new Error('invalid copyright.softwareRegistration');
+  }
   if (!SEMVER.test(config.versionBaseline?.name || '')) {
     throw new Error('invalid versionBaseline.name');
   }

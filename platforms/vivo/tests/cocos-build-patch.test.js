@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-const { patchCocosBuild } = require('../lib/cocos-build-patch');
+const { normalizeCocosExport, patchCocosBuild } = require('../lib/cocos-build-patch');
 const config = require('../release.json');
 const version = { versionName: '1.0.11', versionCode: 12, tag: 'vivo-v1.0.11', reused: false };
 
@@ -31,6 +31,26 @@ function makeFixture({ platform = 'vivo-mini-game', engineFile = 'cc.8e5b4.js' }
   return root;
 }
 
+function makeRawCocosFixture() {
+  const root = makeFixture();
+  fs.mkdirSync(path.join(root, 'src', 'src', 'assets', 'uniSdk'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'src', 'assets', 'main'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'src', 'image'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'src', 'usr_Game'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src', 'image', 'icon.png'), 'icon');
+  fs.writeFileSync(path.join(root, 'src', 'externs-game.js'), 'System.import(\'./application.abc.js\');\n');
+  fs.writeFileSync(path.join(root, 'src', 'application.abc.js'), "this.settingsPath = 'src/settings.abc.json';\n");
+  fs.writeFileSync(path.join(root, 'src', 'src', 'settings.abc.json'), JSON.stringify({ engine: {}, assets: {} }));
+  fs.writeFileSync(path.join(root, 'src', 'src', 'import-map.abc.json'), JSON.stringify({ imports: { cc: './../cocos-js/cc.abc.js' } }));
+  fs.writeFileSync(path.join(root, 'src', 'src', 'system.bundle.abc.js'), 'system');
+  fs.writeFileSync(path.join(root, 'src', 'src', 'polyfills.bundle.abc.js'), 'polyfills');
+  fs.writeFileSync(path.join(root, 'src', 'src', 'assets', 'uniSdk', 'uniSdk.min.abc.js'), 'uniSdk');
+  fs.writeFileSync(path.join(root, 'src', 'assets', 'main', 'index.abc.js'), 'main-assets');
+  fs.writeFileSync(path.join(root, 'src', 'usr_Game', 'config.abc.json'), JSON.stringify({ name: 'Game' }));
+  fs.writeFileSync(path.join(root, 'src', 'usr_Game', 'game.js'), 'subpackage');
+  return root;
+}
+
 test('patches vivo compile config and manifest without fixed filenames', () => {
   const root = makeFixture({ engineFile: 'cc.8e5b4.js' });
   try {
@@ -42,6 +62,33 @@ test('patches vivo compile config and manifest without fixed filenames', () => {
     assert.equal(compile.packages['vivo-mini-game'].versionCode, 12);
     assert.equal(manifest.package, config.packageName);
     assert.equal(manifest.minPlatformVersion, 1206);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('normalizes the raw Cocos 3.6 export for quickgame packaging', () => {
+  const root = makeRawCocosFixture();
+  const rawConfig = { ...config, subpackages: ['Game'] };
+  try {
+    normalizeCocosExport({ buildDir: root, config: rawConfig, version });
+
+    const manifest = readJson(path.join(root, 'manifest.json'));
+    assert.equal(manifest.package, rawConfig.packageName);
+    assert.deepEqual(manifest.subpackages, [{ name: 'usr_Game', root: 'subpackages/Game/' }]);
+    assert.equal(fs.readFileSync(path.join(root, 'main.js'), 'utf8'), 'require("game.js");\n');
+    assert.equal(fs.readFileSync(path.join(root, 'game.js'), 'utf8'), "require('externs-game.js')");
+    assert.equal(fs.existsSync(path.join(root, 'externs-game.js')), true);
+    assert.equal(fs.existsSync(path.join(root, 'src', 'settings.json')), true);
+    assert.equal(fs.existsSync(path.join(root, 'src', 'import-map.js')), true);
+    assert.equal(fs.existsSync(path.join(root, 'src', 'system.bundle.js')), true);
+    assert.equal(fs.existsSync(path.join(root, 'src', 'application.js')), true);
+    assert.equal(fs.existsSync(path.join(root, 'assets', 'main', 'index.abc.js')), true);
+    assert.equal(fs.existsSync(path.join(root, 'subpackages', 'Game', 'config.json')), true);
+    assert.equal(fs.existsSync(path.join(root, 'subpackages', 'Game', 'index.js')), true);
+    assert.equal(fs.readFileSync(path.join(root, 'subpackages', 'Game', 'main.js'), 'utf8'), "require('./index.js');\n");
+    assert.equal(fs.existsSync(path.join(root, 'src', 'src')), false);
+    assert.equal(fs.existsSync(path.join(root, 'src', 'usr_Game')), false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

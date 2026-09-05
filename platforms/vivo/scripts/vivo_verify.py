@@ -108,14 +108,19 @@ def _check_main_sources(
     traversal = re.search(r"require\s*\(\s*[\"'](?:\.\./)+", engine_source)
     _record(checks, f"{name}-no-traversal", traversal is None, f"{name} contains a traversal loader" if traversal else f"{name} loader has no traversal")
     safe_loader = re.search(r"require\s*\(\s*[\"']src/[\"']\s*\+", engine_source)
-    _record(checks, f"{name}-root-loader", safe_loader is not None, f"{name} is missing the RPK-root plugin loader")
+    modern_safe_loader = re.search(
+        r"function\s+loadJsFile\s*\(\s*path\s*\)\s*\{[\s\S]*?require\s*\(\s*[\"']{2}\s*\+\s*path",
+        engine_source,
+    )
+    _record(checks, f"{name}-root-loader", safe_loader is not None or modern_safe_loader is not None, f"{name} is missing the RPK-root plugin loader")
 
 
 def verify_cocos_build(root: Path, config: dict, version: dict) -> list[dict]:
     root = Path(root)
     checks: list[dict[str, Any]] = []
     compile_config = _read_json(root / "cocos.compile.config.json", checks, "compile-config")
-    manifest = _read_json(root / "src" / "manifest.json", checks, "manifest")
+    manifest_path = root / "manifest.json" if (root / "manifest.json").is_file() else root / "src" / "manifest.json"
+    manifest = _read_json(manifest_path, checks, "manifest")
     settings = _read_json(root / "src" / "settings.json", checks, "settings")
 
     if compile_config is not None:
@@ -133,9 +138,11 @@ def verify_cocos_build(root: Path, config: dict, version: dict) -> list[dict]:
 
     engine_path = _discover_one(root / "src" / "cocos-js", "cc*.js", checks, "cocos-engine-discovery")
     system_path = _discover_one(root / "src", "system.bundle*.js", checks, "system-bundle-discovery")
+    game_path = root / "game.js" if (root / "game.js").is_file() else root / "src" / "game.js"
+    adapter_root = root / "runtime-adapter" if (root / "runtime-adapter").is_dir() else root / "src" / "runtime-adapter"
     required_files = {
-        "game-entry": root / "src" / "game.js",
-        "engine-adapter": root / "src" / "runtime-adapter" / "engine-adapter.js",
+        "game-entry": game_path,
+        "engine-adapter": adapter_root / "engine-adapter.js",
         "minigame-config": root / "minigame.config.js",
     }
     for name, path in required_files.items():
@@ -148,7 +155,12 @@ def verify_cocos_build(root: Path, config: dict, version: dict) -> list[dict]:
     adapter_source = required_files["engine-adapter"].read_text(encoding="utf-8", errors="replace") if required_files["engine-adapter"].is_file() else ""
     minigame_source = required_files["minigame-config"].read_text(encoding="utf-8", errors="replace") if required_files["minigame-config"].is_file() else ""
     _record(checks, "game-externs-entry", re.search(r"require\s*\(\s*['\"]externs-game\.js['\"]\s*\)", game_source) is not None, "Cocos game entry is missing externs-game.js")
-    _record(checks, "engine-filesystem-bridge", "cc.assetManager.fsUtils = ral.fsUtils" in adapter_source, "engine adapter is missing the Cocos filesystem bridge")
+    _record(
+        checks,
+        "engine-filesystem-bridge",
+        re.search(r"cc\.assetManager\.fsUtils\s*=\s*ral\.fsUtils", adapter_source) is not None,
+        "engine adapter is missing the Cocos filesystem bridge",
+    )
     for adapter in ("runtime-adapter/ral.js", "runtime-adapter/web-adapter.js", "runtime-adapter/engine-adapter.js"):
         _record(checks, f"minigame-{adapter}", adapter in minigame_source, f"minigame.config.js is missing external {adapter}")
     if system_path:
@@ -201,13 +213,17 @@ def _main_startup_checks(data: bytes, config: dict, version: dict, checks: list[
             ("ral", r"require\s*\(\s*['\"]runtime-adapter/ral\.js['\"]\s*\)"),
             ("web", r"require\s*\(\s*['\"]runtime-adapter/web-adapter\.js['\"]\s*\)"),
             ("engine", r"require\s*\(\s*['\"]runtime-adapter/engine-adapter\.js['\"]\s*\)"),
-            ("system", r"require\s*\(\s*['\"]src/system\.bundle[^'\"]+\.js['\"]\s*\)"),
+            ("system", r"require\s*\(\s*['\"]src/system\.bundle(?:\.[^'\"/]+)?\.js['\"]\s*\)"),
         )
         for check_name, pattern in required:
             _record(checks, f"{label}-startup-{check_name}", re.search(pattern, externs_source) is not None, f"{label} startup is missing {check_name}")
-        _record(checks, f"{label}-startup-window", "window.self = window" in externs_source, f"{label} startup is missing window.self")
+        _record(checks, f"{label}-startup-window", re.search(r"window\.self\s*=\s*window", externs_source) is not None, f"{label} startup is missing window.self")
         _record(checks, f"{label}-startup-warmup", "System.warmup" in externs_source, f"{label} startup is missing System.warmup")
-        _record(checks, f"{label}-startup-application", re.search(r"System\.import\s*\(\s*['\"]\./application\.[^'\"]+\.js['\"]\s*\)", externs_source) is not None, f"{label} startup is missing the hashed application import")
+        application_import = re.search(
+            r"System\.import\s*\(\s*['\"]\./(?:src/)?application(?:\.[^'\"/]+)?\.js['\"]\s*\)",
+            externs_source,
+        )
+        _record(checks, f"{label}-startup-application", application_import is not None, f"{label} startup is missing the application import")
         for adapter in ("ral", "web-adapter", "engine-adapter"):
             pattern = rf"require\s*\(\s*['\"]runtime-adapter/{adapter}['\"]\s*\)"
             _record(checks, f"{label}-no-extensionless-{adapter}", re.search(pattern, externs_source) is None, f"{label} contains an extensionless {adapter} require")
