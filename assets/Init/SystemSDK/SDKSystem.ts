@@ -49,6 +49,7 @@ export class SDKSystem extends BasicSystem {
         if (this._curSDK) return;
 
         const qgProvider = this.getProviderName(window['qg']);
+        const cocosPlatform = window['cc'] && window['cc'].sys && window['cc'].sys.platform;
         // OPPO mini game
         if (qgProvider.indexOf("oppo") > -1) {
             this._curPlatform = PlatformType.OPPOMiniGame;
@@ -56,7 +57,7 @@ export class SDKSystem extends BasicSystem {
             return;
         }
         // VIVO mini game
-        if (qgProvider.indexOf("vivo") > -1) {
+        if (cocosPlatform === "VIVO_MINI_GAME" || qgProvider.indexOf("vivo") > -1) {
             this._curPlatform = PlatformType.VIVOMiniGame;
             this.instanceSDK(new VIVOSDK());
             return;

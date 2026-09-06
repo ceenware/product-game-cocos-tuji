@@ -61,6 +61,7 @@ test('patches vivo compile config and manifest without fixed filenames', () => {
     assert.equal(compile.packages['vivo-mini-game'].versionName, '1.0.11');
     assert.equal(compile.packages['vivo-mini-game'].versionCode, 12);
     assert.equal(manifest.package, config.packageName);
+    assert.equal(manifest.name, config.displayName);
     assert.equal(manifest.minPlatformVersion, 1206);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -75,6 +76,7 @@ test('normalizes the raw Cocos 3.6 export for quickgame packaging', () => {
 
     const manifest = readJson(path.join(root, 'manifest.json'));
     assert.equal(manifest.package, rawConfig.packageName);
+    assert.equal(manifest.name, rawConfig.displayName);
     assert.deepEqual(manifest.subpackages, [{ name: 'usr_Game', root: 'subpackages/Game/' }]);
     assert.equal(fs.readFileSync(path.join(root, 'main.js'), 'utf8'), 'require("game.js");\n');
     assert.equal(fs.readFileSync(path.join(root, 'game.js'), 'utf8'), "require('externs-game.js')");

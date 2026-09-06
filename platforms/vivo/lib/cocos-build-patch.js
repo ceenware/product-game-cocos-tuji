@@ -72,6 +72,7 @@ function patchManifestMetadata(manifest, config, version) {
   return {
     ...manifest,
     package: config.packageName,
+    ...(config.displayName ? { name: config.displayName } : {}),
     versionName: version.versionName,
     versionCode: version.versionCode,
     minPlatformVersion: config.minPlatformVersion,
@@ -162,6 +163,7 @@ function patchCocosBuild({ buildDir, config, version }) {
   if (compile.appTemplateData) compile.appTemplateData.customVersion = version.versionName;
   Object.assign(manifest, {
     package: config.packageName,
+    ...(config.displayName ? { name: config.displayName } : {}),
     versionName: version.versionName,
     versionCode: version.versionCode,
     minPlatformVersion: config.minPlatformVersion,

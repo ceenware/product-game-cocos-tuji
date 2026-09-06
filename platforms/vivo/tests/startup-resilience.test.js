@@ -59,6 +59,12 @@ test('vivo SDK platform checks tolerate runtimes without getProvider', () => {
   assert.doesNotMatch(sdkSystemSource, /window\['qg'\]\.getProvider\(\)\.toLowerCase\(\)/);
 });
 
+test('vivo SDK identifies Cocos vivo runtimes without qg provider metadata', () => {
+  assert.match(sdkSystemSource, /window\['cc'\].*sys.*platform/);
+  assert.match(sdkSystemSource, /VIVO_MINI_GAME/);
+  assert.match(sdkSystemSource, /VIVO_MINI_GAME[\s\S]*qgProvider\.indexOf\("vivo"\)/);
+});
+
 test('vivo SDK platform checks guard aliased qg providers in compressed exports', () => {
   const patched = patchUniSdkSource([
     '2==i.Global.engineType?"XIAOMI_QUICK_GAME"==e.cc.sys.platform:void 0!==e.qg',

@@ -39,6 +39,7 @@ function patchManifest(manifest, config, version) {
   return {
     ...manifest,
     package: config.packageName,
+    ...(config.displayName ? { name: config.displayName } : {}),
     versionName: version.versionName,
     versionCode: version.versionCode,
     minPlatformVersion: config.minPlatformVersion,
