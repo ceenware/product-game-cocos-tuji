@@ -76,7 +76,7 @@ function patchManifestMetadata(manifest, config, version) {
     versionName: version.versionName,
     versionCode: version.versionCode,
     minPlatformVersion: config.minPlatformVersion,
-    subpackages: config.subpackages.map((name) => ({ name: `usr_${name}`, root: `subpackages/${name}/` })),
+    subpackages: config.subpackages.map((name) => ({ name: `usr_${name}`, root: `usr_${name}/` })),
   };
 }
 
@@ -113,7 +113,7 @@ function normalizeCocosExport({ buildDir, config, version }) {
 
   for (const name of config.subpackages) {
     const source = path.join(rawSourceDir, `usr_${name}`);
-    const destination = path.join(buildDir, 'subpackages', name);
+    const destination = path.join(buildDir, `usr_${name}`);
     moveEntry(source, destination);
     renameExactlyOne(destination, /^config(?:\.[^.]+)?\.json$/, 'config.json');
     moveEntry(path.join(destination, 'game.js'), path.join(destination, 'index.js'));

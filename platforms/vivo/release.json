@@ -8,7 +8,7 @@
     "owner": "巴中宜辰网络科技有限公司",
     "softwareRegistration": "软著认000494301号"
   },
-  "versionBaseline": { "name": "1.0.10", "code": 11 },
+  "versionBaseline": { "name": "1.0.12", "code": 13 },
   "minPlatformVersion": 1206,
   "subpackages": ["AudioAssets", "Effect", "Game", "LevelData", "Roles", "UI"],
   "limits": { "mainBytes": 4194304, "totalBytes": 20971520 },

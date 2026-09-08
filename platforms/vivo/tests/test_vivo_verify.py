@@ -50,7 +50,7 @@ def valid_manifest() -> dict:
         "minPlatformVersion": CONFIG["minPlatformVersion"],
         "buildType": "release",
         "subpackages": [
-            {"name": f"usr_{name}", "root": f"subpackages/{name}/"}
+            {"name": f"usr_{name}", "root": f"usr_{name}/"}
             for name in CONFIG["subpackages"]
         ],
     }
@@ -216,9 +216,9 @@ def make_outer_rpk(
         if archive_name not in omit:
             outer_entries[archive_name] = zip_bytes(
                 {
-                    f"subpackages/{name}/main.js": "import './index.js';",
-                    f"subpackages/{name}/index.js": "export default {};",
-                    f"subpackages/{name}/config.json": "{}",
+                    f"usr_{name}/main.js": "import './index.js';",
+                    f"usr_{name}/index.js": "export default {};",
+                    f"usr_{name}/config.json": "{}",
                 }
             )
     for archive_name in extra_archives or ():

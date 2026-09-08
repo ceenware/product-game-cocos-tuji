@@ -8,27 +8,27 @@ const { resolveVersion } = require('../lib/version');
 
 const config = {
   tagPrefix: 'vivo-v',
-  versionBaseline: { name: '1.0.10', code: 11 },
+  versionBaseline: { name: '1.0.12', code: 13 },
 };
 
-test('starts vivo at 1.0.11/12 and ignores other platform tags', () => {
+test('starts vivo at 1.0.13/14 and ignores other platform tags', () => {
   assert.deepEqual(
     resolveVersion(config, { allTags: ['oppo-v9.9.9'], headTags: [] }),
-    { versionName: '1.0.11', versionCode: 12, tag: 'vivo-v1.0.11', reused: false },
+    { versionName: '1.0.13', versionCode: 14, tag: 'vivo-v1.0.13', reused: false },
   );
 });
 
 test('increments only the vivo patch series', () => {
   assert.deepEqual(
-    resolveVersion(config, { allTags: ['vivo-v1.0.11', 'vivo-v1.0.12'], headTags: [] }),
-    { versionName: '1.0.13', versionCode: 14, tag: 'vivo-v1.0.13', reused: false },
+    resolveVersion(config, { allTags: ['vivo-v1.0.12', 'vivo-v1.0.13'], headTags: [] }),
+    { versionName: '1.0.14', versionCode: 15, tag: 'vivo-v1.0.14', reused: false },
   );
 });
 
 test('reuses the current commit tag', () => {
   assert.deepEqual(
-    resolveVersion(config, { allTags: ['vivo-v1.0.11'], headTags: ['vivo-v1.0.11'] }),
-    { versionName: '1.0.11', versionCode: 12, tag: 'vivo-v1.0.11', reused: true },
+    resolveVersion(config, { allTags: ['vivo-v1.0.12'], headTags: ['vivo-v1.0.12'] }),
+    { versionName: '1.0.12', versionCode: 13, tag: 'vivo-v1.0.12', reused: true },
   );
 });
 
@@ -48,8 +48,8 @@ test('rejects a malformed tag using the vivo prefix', () => {
 
 test('rejects a non-canonical tag with leading-zero components', () => {
   assert.throws(
-    () => resolveVersion(config, { allTags: ['vivo-v01.0.11'], headTags: ['vivo-v01.0.11'] }),
-    /invalid vivo release tag vivo-v01.0.11/,
+    () => resolveVersion(config, { allTags: ['vivo-v01.0.12'], headTags: ['vivo-v01.0.12'] }),
+    /invalid vivo release tag vivo-v01.0.12/,
   );
 });
 
@@ -79,9 +79,9 @@ test('CLI reads Git tags and writes JSON and GITHUB_OUTPUT', () => {
     git(['config', 'user.email', 'vivo-version-test@example.com']);
     git(['config', 'user.name', 'vivo-version-test']);
     git(['commit', '--quiet', '--allow-empty', '-m', 'baseline']);
-    git(['tag', 'vivo-v1.0.11']);
-    git(['commit', '--quiet', '--allow-empty', '-m', 'current']);
     git(['tag', 'vivo-v1.0.12']);
+    git(['commit', '--quiet', '--allow-empty', '-m', 'current']);
+    git(['tag', 'vivo-v1.0.13']);
 
     const result = spawnSync(
       process.execPath,
@@ -91,14 +91,14 @@ test('CLI reads Git tags and writes JSON and GITHUB_OUTPUT', () => {
 
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')), {
-      versionName: '1.0.12',
-      versionCode: 13,
-      tag: 'vivo-v1.0.12',
+      versionName: '1.0.13',
+      versionCode: 14,
+      tag: 'vivo-v1.0.13',
       reused: true,
     });
     assert.equal(
       fs.readFileSync(githubOutput, 'utf8'),
-      'versionName=1.0.12\nversionCode=13\ntag=vivo-v1.0.12\nreused=true\n',
+      'versionName=1.0.13\nversionCode=14\ntag=vivo-v1.0.13\nreused=true\n',
     );
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });

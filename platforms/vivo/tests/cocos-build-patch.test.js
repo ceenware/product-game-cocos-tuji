@@ -77,7 +77,7 @@ test('normalizes the raw Cocos 3.6 export for quickgame packaging', () => {
     const manifest = readJson(path.join(root, 'manifest.json'));
     assert.equal(manifest.package, rawConfig.packageName);
     assert.equal(manifest.name, rawConfig.displayName);
-    assert.deepEqual(manifest.subpackages, [{ name: 'usr_Game', root: 'subpackages/Game/' }]);
+    assert.deepEqual(manifest.subpackages, [{ name: 'usr_Game', root: 'usr_Game/' }]);
     assert.equal(fs.readFileSync(path.join(root, 'main.js'), 'utf8'), 'require("game.js");\n');
     assert.equal(fs.readFileSync(path.join(root, 'game.js'), 'utf8'), "require('externs-game.js')");
     assert.equal(fs.existsSync(path.join(root, 'externs-game.js')), true);
@@ -86,11 +86,12 @@ test('normalizes the raw Cocos 3.6 export for quickgame packaging', () => {
     assert.equal(fs.existsSync(path.join(root, 'src', 'system.bundle.js')), true);
     assert.equal(fs.existsSync(path.join(root, 'src', 'application.js')), true);
     assert.equal(fs.existsSync(path.join(root, 'assets', 'main', 'index.abc.js')), true);
-    assert.equal(fs.existsSync(path.join(root, 'subpackages', 'Game', 'config.json')), true);
-    assert.equal(fs.existsSync(path.join(root, 'subpackages', 'Game', 'index.js')), true);
-    assert.equal(fs.readFileSync(path.join(root, 'subpackages', 'Game', 'main.js'), 'utf8'), "require('./index.js');\n");
+    assert.equal(fs.existsSync(path.join(root, 'usr_Game', 'config.json')), true);
+    assert.equal(fs.existsSync(path.join(root, 'usr_Game', 'index.js')), true);
+    assert.equal(fs.readFileSync(path.join(root, 'usr_Game', 'main.js'), 'utf8'), "require('./index.js');\n");
     assert.equal(fs.existsSync(path.join(root, 'src', 'src')), false);
     assert.equal(fs.existsSync(path.join(root, 'src', 'usr_Game')), false);
+    assert.equal(fs.existsSync(path.join(root, 'subpackages', 'Game')), false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

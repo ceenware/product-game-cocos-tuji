@@ -74,19 +74,19 @@ test('waits for the default quickgame compiler and ignores stale output', async 
   const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vivo-quickgame-project-'));
   const projectConfig = { ...config, subpackages: ['Game'] };
   try {
-    fs.mkdirSync(path.join(projectDir, 'subpackages', 'Game'), { recursive: true });
+    fs.mkdirSync(path.join(projectDir, 'usr_Game'), { recursive: true });
     fs.writeFileSync(path.join(projectDir, 'manifest.json'), JSON.stringify({
       package: projectConfig.packageName,
       versionCode: 12,
       minPlatformVersion: 1206,
       icon: 'icon.png',
-      subpackages: [{ name: 'usr_Game', root: 'subpackages/Game/' }],
+      subpackages: [{ name: 'usr_Game', root: 'usr_Game/' }],
     }));
     fs.writeFileSync(path.join(projectDir, 'icon.png'), 'icon');
     fs.writeFileSync(path.join(projectDir, 'main.js'), 'console.log("main");\n');
-    fs.writeFileSync(path.join(projectDir, 'subpackages', 'Game', 'main.js'), "require('./index.js');\n");
-    fs.writeFileSync(path.join(projectDir, 'subpackages', 'Game', 'index.js'), 'console.log("subpackage");\n');
-    fs.writeFileSync(path.join(projectDir, 'subpackages', 'Game', 'config.json'), '{}');
+    fs.writeFileSync(path.join(projectDir, 'usr_Game', 'main.js'), "require('./index.js');\n");
+    fs.writeFileSync(path.join(projectDir, 'usr_Game', 'index.js'), 'console.log("subpackage");\n');
+    fs.writeFileSync(path.join(projectDir, 'usr_Game', 'config.json'), '{}');
 
     await assert.doesNotReject(() => packageRpk({
       projectDir,

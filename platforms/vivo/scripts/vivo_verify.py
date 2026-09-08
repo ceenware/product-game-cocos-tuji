@@ -63,7 +63,7 @@ def _check_manifest(
         _record(checks, f"{name}-{key}", actual == value, f"{name} {key} is {actual!r}, expected {value!r}")
 
     expected_subpackages = [
-        {"name": f"usr_{bundle}", "root": f"subpackages/{bundle}/"}
+        {"name": f"usr_{bundle}", "root": f"usr_{bundle}/"}
         for bundle in config.get("subpackages", [])
     ]
     _record(
@@ -302,7 +302,7 @@ def verify_release_rpk(rpk_path: Path, config: dict, version: dict) -> list[dict
                             _record(checks, "release-settings-json", False, f"invalid release settings.json: {exc}")
                 elif name != f"{config['packageName']}.rpk":
                     bundle_name = name.removeprefix("usr_").removesuffix(".rpk")
-                    for required in (f"subpackages/{bundle_name}/main.js", f"subpackages/{bundle_name}/index.js", f"subpackages/{bundle_name}/config.json"):
+                    for required in (f"usr_{bundle_name}/main.js", f"usr_{bundle_name}/index.js", f"usr_{bundle_name}/config.json"):
                         _record(checks, f"{name}-{required}", required in nested.namelist(), f"{name} missing {required}" if required not in nested.namelist() else f"{name} contains {required}")
         except BadZipFile:
             _record(checks, f"nested-zip-{name}", False, f"nested archive is invalid: {name}")

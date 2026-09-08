@@ -131,7 +131,7 @@ function makeNormalizedProjectFixture() {
   const version = { versionName: '1.0.11', versionCode: 12 };
   fs.mkdirSync(path.join(projectDir, 'src', 'cocos-js'), { recursive: true });
   fs.mkdirSync(path.join(projectDir, 'src', 'assets', 'uniSdk'), { recursive: true });
-  fs.mkdirSync(path.join(projectDir, 'subpackages', 'Game'), { recursive: true });
+  fs.mkdirSync(path.join(projectDir, 'usr_Game'), { recursive: true });
   const normalizedStartup = mainSource()
     .replace(/require\('\.\/web-adapter'\)/, "require('runtime-adapter/web-adapter.js')")
     .replace(/require\('\.\/engine-adapter'\)/, "require('runtime-adapter/engine-adapter.js')");
@@ -143,8 +143,8 @@ function makeNormalizedProjectFixture() {
   fs.writeFileSync(path.join(projectDir, 'src', 'settings.json'), '{}');
   fs.writeFileSync(path.join(projectDir, 'src', 'cocos-js', 'cc.abc123.js'), cocosEngineSource());
   fs.writeFileSync(path.join(projectDir, 'src', 'assets', 'uniSdk', 'uniSdk.min.abc123.js'), uniSdkSource());
-  fs.writeFileSync(path.join(projectDir, 'subpackages', 'Game', 'config.json'), '{}');
-  fs.writeFileSync(path.join(projectDir, 'subpackages', 'Game', 'index.js'), 'export default {};\n');
+  fs.writeFileSync(path.join(projectDir, 'usr_Game', 'config.json'), '{}');
+  fs.writeFileSync(path.join(projectDir, 'usr_Game', 'index.js'), 'export default {};\n');
 
   fs.mkdirSync(path.join(adapterRoot, 'runtime', 'vivo-mini-game'), { recursive: true });
   fs.writeFileSync(path.join(adapterRoot, 'runtime', 'vivo-mini-game', 'ral.min.js'), 'ral adapter');
@@ -182,7 +182,7 @@ test('creates configured usr subpackages with main.js entries', () => {
   const root = makeBundleFixture(['AudioAssets', 'Game']);
   try {
     prepareSubpackages(root, ['AudioAssets', 'Game']);
-    assert.equal(fs.readFileSync(path.join(root, 'subpackages', 'Game', 'main.js'), 'utf8'), "import './index.js';\n");
+    assert.equal(fs.readFileSync(path.join(root, 'usr_Game', 'main.js'), 'utf8'), "import './index.js';\n");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -228,8 +228,8 @@ test('patches manifest metadata and preserves configured subpackage order', () =
     minPlatformVersion: 1206,
     buildType: 'release',
     subpackages: [
-      { name: 'usr_Game', root: 'subpackages/Game/' },
-      { name: 'usr_AudioAssets', root: 'subpackages/AudioAssets/' },
+      { name: 'usr_Game', root: 'usr_Game/' },
+      { name: 'usr_AudioAssets', root: 'usr_AudioAssets/' },
     ],
   });
 });
@@ -312,7 +312,7 @@ test('patches only the temporary project and its existing build mirror', () => {
       assert.equal(fs.readFileSync(path.join(tree, 'src', 'runtime-adapter', 'web-adapter.js'), 'utf8'), 'web adapter');
       assert.equal(fs.readFileSync(path.join(tree, 'src', 'runtime-adapter', 'engine-adapter.js'), 'utf8'), 'engine adapter');
       assert.equal(fs.existsSync(path.join(tree, 'assets', 'Game')), false);
-      assert.equal(fs.readFileSync(path.join(tree, 'subpackages', 'Game', 'main.js'), 'utf8'), "import './index.js';\n");
+      assert.equal(fs.readFileSync(path.join(tree, 'usr_Game', 'main.js'), 'utf8'), "import './index.js';\n");
       assert.equal(JSON.parse(fs.readFileSync(path.join(tree, 'manifest.json'), 'utf8')).buildType, 'release');
       assert.match(fs.readFileSync(path.join(tree, 'src', 'cocos-js', 'cc.abc123.js'), 'utf8'), /VIVO_MINI_GAME/);
       assert.match(fs.readFileSync(path.join(tree, 'src', 'assets', 'uniSdk', 'uniSdk.min.js'), 'utf8'), /getProvider/);
@@ -334,7 +334,7 @@ test('patches the normalized Cocos export layout used by quickgame-cli', () => {
     assert.equal(fs.readFileSync(path.join(fixture.projectDir, 'runtime-adapter', 'engine-adapter.js'), 'utf8'), 'engine adapter');
     assert.equal(JSON.parse(fs.readFileSync(path.join(fixture.projectDir, 'manifest.json'), 'utf8')).buildType, 'release');
     assert.equal(JSON.parse(fs.readFileSync(path.join(fixture.projectDir, 'src', 'settings.json'), 'utf8')).engine.debug, false);
-    assert.equal(fs.readFileSync(path.join(fixture.projectDir, 'subpackages', 'Game', 'main.js'), 'utf8'), "import './index.js';\n");
+    assert.equal(fs.readFileSync(path.join(fixture.projectDir, 'usr_Game', 'main.js'), 'utf8'), "import './index.js';\n");
     assert.match(fs.readFileSync(path.join(fixture.projectDir, 'externs-game.js'), 'utf8'), /runtime-adapter\/ral\.js/);
   } finally {
     fs.rmSync(fixture.projectDir, { recursive: true, force: true });

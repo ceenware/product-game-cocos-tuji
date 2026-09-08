@@ -45,7 +45,7 @@ function patchManifest(manifest, config, version) {
     minPlatformVersion: config.minPlatformVersion,
     buildType: 'release',
     config: { ...(manifest.config || {}), debug: false, logLevel: manifest.config?.logLevel || 'log' },
-    subpackages: config.subpackages.map((name) => ({ name: `usr_${name}`, root: `subpackages/${name}/` })),
+    subpackages: config.subpackages.map((name) => ({ name: `usr_${name}`, root: `usr_${name}/` })),
   };
 }
 
@@ -563,7 +563,7 @@ function planSubpackages(projectRoot, namesOrOptions, maybeOptions) {
 
   const plans = names.map((name) => {
     const source = path.join(projectRoot, 'assets', name);
-    const destination = path.join(projectRoot, 'subpackages', name);
+    const destination = path.join(projectRoot, `usr_${name}`);
     if (fs.existsSync(source)) {
       validateBundle(source);
       return { source, destination };
@@ -579,14 +579,15 @@ function planSubpackages(projectRoot, namesOrOptions, maybeOptions) {
 }
 
 function applySubpackagePlans(projectRoot, plans) {
-  fs.mkdirSync(path.join(projectRoot, 'subpackages'), { recursive: true });
   for (const { source, destination } of plans) {
     if (source) {
       if (fs.existsSync(destination)) {
         fs.rmSync(destination, { recursive: true, force: true });
       }
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
       fs.renameSync(source, destination);
     }
+    fs.mkdirSync(destination, { recursive: true });
     fs.writeFileSync(path.join(destination, 'main.js'), "import './index.js';\n");
   }
   return plans.map(({ destination }) => destination);
@@ -610,7 +611,8 @@ function planTree({ tree, adapterRoot, config, version, optional = false }) {
 
   const vivoRuntime = path.join(adapterRoot, 'runtime', 'vivo-mini-game');
   const commonRuntime = path.join(adapterRoot, 'runtime');
-  const normalizedLayout = fs.existsSync(path.join(tree, 'subpackages')) && fs.existsSync(path.join(tree, 'externs-game.js'));
+  const normalizedLayout = fs.existsSync(path.join(tree, 'externs-game.js'))
+    && config.subpackages.every((name) => fs.existsSync(path.join(tree, `usr_${name}`)));
   const mainPath = normalizedLayout ? path.join(tree, 'externs-game.js') : path.join(tree, 'main.js');
   const importMapPath = path.join(tree, 'src', 'import-map.js');
   const settingsPath = path.join(tree, 'src', 'settings.json');

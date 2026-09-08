@@ -9,7 +9,7 @@ test('loads the committed vivo release contract', () => {
   assert.equal(config.branch, 'vivo');
   assert.equal(config.tagPrefix, 'vivo-v');
   assert.equal(config.packageName, 'com.yongzhe.huoxiantuwei.vivominigame');
-  assert.deepEqual(config.versionBaseline, { name: '1.0.10', code: 11 });
+  assert.deepEqual(config.versionBaseline, { name: '1.0.12', code: 13 });
   assert.equal(config.cocos.version, '3.6.2');
   assert.equal(config.limits.mainBytes, 4194304);
   assert.equal(config.limits.totalBytes, 20971520);
